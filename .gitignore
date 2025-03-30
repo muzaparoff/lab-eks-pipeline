@@ -172,3 +172,35 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+terraform.tfvars
+.terraformrc
+terraform.rc
+crash.log
+*_override.tf
+*_override.tf.json
+*.tfbackup
+.terraform.tfstate.lock.info
+.terraform/providers/**
+
+# Provider binaries
+**/.terraform/providers/**/terraform-provider-*
+
+# Local certs
+certificates/
+
+# Environment variables
+.env
+.envrc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

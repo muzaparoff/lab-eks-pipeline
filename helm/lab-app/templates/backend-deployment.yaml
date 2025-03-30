@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  labels:
+    app: lab-app
+    tier: backend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: lab-app
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: lab-app
+        tier: backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DB_HOST
+              value: "{{ .Values.backend.env.DB_HOST }}"
+            - name: DB_NAME
+              value: "{{ .Values.backend.env.DB_NAME }}"
+            - name: DB_USER
+              value: "{{ .Values.backend.env.DB_USER }}"
+            - name: DB_PASSWORD
+              value: "{{ .Values.backend.env.DB_PASSWORD }}"

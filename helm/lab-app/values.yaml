@@ -1,0 +1,17 @@
+# Default values for my-app chart
+frontend:
+  image:
+    repository: "<aws_account_id>.dkr.ecr.<region>.amazonaws.com/my-app-frontend"
+    tag: "v1.0.3"
+  replicas: 2
+  env:
+    APP_VERSION: "v1.0.3"
+backend:
+  image:
+    repository: "<aws_account_id>.dkr.ecr.<region>.amazonaws.com/my-app-backend"
+    tag: "v1.0.3"
+  replicas: 2
+  env:
+    APP_VERSION: "v1.0.3"
+service:
+  internalDomain: "app.internal.example.com"
