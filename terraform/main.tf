@@ -125,11 +125,10 @@ resource "helm_release" "argocd" {
 
 resource "local_file" "helm_values" {
   content = templatefile("${path.module}/templates/values.yaml.tpl", {
-    rds_endpoint        = module.rds.endpoint
-    db_name            = var.db_name
-    app_version        = var.app_version
-    domain_name        = var.cert_domain
-    acm_certificate_arn = module.route53_acm.certificate_arn
+    rds_endpoint = module.rds.endpoint
+    db_name      = var.db_name
+    app_version  = var.app_version
+    domain_name  = var.cert_domain
   })
   filename = "${path.module}/../helm/lab-app/values.yaml"
 }

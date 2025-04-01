@@ -28,21 +28,19 @@ This repository contains a fully automated solution for deploying an AWS environ
 
 ### 1. Initial Setup
 
-Generate and configure the self-signed certificate:
-```bash
-# Generate certificate with proper extensions
-./scripts/generate_and_upload_cert.sh app.labinternal.example.com
+## Certificate Setup
 
-# The script will output the base64-encoded values to add to GitHub secrets:
-# - GH_CERT_BODY: The certificate content
-# - GH_CERT_KEY: The private key content
+Before running Terraform, set up the ACM certificate:
+
+```bash
+# Generate and import certificate
+./scripts/manage_acm_cert.sh app.labinternal.example.com
 ```
 
-Add the certificate values to GitHub repository secrets. The generated certificate includes:
-- Subject Alternative Names (SAN)
-- Proper key usage extensions
-- 365-day validity
-- 2048-bit RSA key
+The script will:
+- Generate a self-signed certificate
+- Import it to ACM
+- Store files in ./certificates directory (gitignored)
 
 # Generate database password
 source scripts/generate_password.sh
