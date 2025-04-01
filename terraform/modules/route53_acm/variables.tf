@@ -19,19 +19,11 @@ variable "cluster_endpoint" {
 }
 
 variable "certificate_body" {
-  description = "PEM formatted certificate body"
+  description = "Base64 encoded certificate body"
   type        = string
-  default     = ""
 }
 
-variable "certificate_private_key" {
-  description = "PEM formatted private key"
+variable "certificate_key" {
+  description = "Base64 encoded certificate private key"
   type        = string
-  default     = ""
-}
-
-variable "certificate_chain" {
-  description = "PEM formatted certificate chain"
-  type        = string
-  default     = ""
 }
