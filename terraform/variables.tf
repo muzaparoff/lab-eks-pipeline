@@ -99,3 +99,15 @@ variable "enable_ecr_scan_on_push" {
   type        = bool
   default     = true
 }
+
+variable "certificate_body" {
+  description = "Base64 encoded certificate body"
+  type        = string
+  sensitive   = true
+}
+
+variable "certificate_key" {
+  description = "Base64 encoded certificate private key"
+  type        = string
+  sensitive   = true
+}

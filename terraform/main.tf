@@ -100,8 +100,7 @@ module "route53_acm" {
 
   depends_on = [
     module.vpc,
-    module.eks,
-    aws_acm_certificate.existing  # Add this line if you have a pre-existing certificate
+    module.eks
   ]
 }
 
