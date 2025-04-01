@@ -30,16 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Add certificate validation step
       - name: Validate Certificate Variables
         run: |
-          # Check if variables are set
           if [[ -z "${TF_VAR_certificate_body}" ]] || [[ -z "${TF_VAR_certificate_key}" ]]; then
             echo "Error: Certificate variables are not set"
             exit 1
           fi
           
-          # Validate base64 encoding
           if echo "${TF_VAR_certificate_body}" | base64 -d > /dev/null 2>&1; then
             echo "Certificate body is valid base64"
           else
@@ -54,14 +51,12 @@ jobs:
             exit 1
           fi
           
-          # Validate certificate format
           CERT_CONTENT=$(echo "${TF_VAR_certificate_body}" | base64 -d)
           if ! echo "$CERT_CONTENT" | grep -q "BEGIN CERTIFICATE" || ! echo "$CERT_CONTENT" | grep -q "END CERTIFICATE"; then
             echo "Error: Invalid certificate format"
             exit 1
           fi
           
-          # Validate key format
           KEY_CONTENT=$(echo "${TF_VAR_certificate_key}" | base64 -d)
           if ! echo "$KEY_CONTENT" | grep -q "BEGIN PRIVATE KEY" || ! echo "$KEY_CONTENT" | grep -q "END PRIVATE KEY"; then
             echo "Error: Invalid private key format"
@@ -84,29 +79,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
         with:
-          terraform_version: 1.5.7
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Terraform Init
+      - name: Run Terraform with Docker
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_certificate_body: ${{ secrets.GH_CERT_BODY }}
+          TF_VAR_certificate_key: ${{ secrets.GH_CERT_KEY }}
         run: |
           cd terraform
-          terraform init
-
-      - name: Terraform Plan/Apply/Destroy
-        run: |
-          cd terraform
-          if [[ "${{ github.event.inputs.action }}" == "destroy" ]]; then
-            terraform destroy -auto-approve
-          else
-            terraform plan
-            terraform apply -auto-approve
-          fi
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_REGION=${{ env.AWS_REGION }} \
+            -e TF_VAR_db_password=$TF_VAR_db_password \
+            -e TF_VAR_certificate_body=$TF_VAR_certificate_body \
+            -e TF_VAR_certificate_key=$TF_VAR_certificate_key \
+            muzaparoff/terraform-runner:latest \
+            ${{ github.event.inputs.action == 'destroy' && 'destroy -auto-approve' || 'apply -auto-approve' }}
 
   get-terraform-outputs:
     runs-on: ubuntu-latest
-    needs: deploy-infrastructure  # Make sure infrastructure exists first
+    needs: deploy-infrastructure
     outputs:
       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
     steps:
@@ -119,29 +119,48 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
         with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Initialize and get outputs
+      - name: Initialize and get outputs with Docker
         id: tf-outputs
         working-directory: terraform
         run: |
-          # Initialize terraform with -reconfigure flag
-          terraform init -reconfigure
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_REGION=${{ env.AWS_REGION }} \
+            muzaparoff/terraform-runner:latest \
+            init -reconfigure
 
-          # Wait for potential locks to be released
           for i in {1..5}; do
-            if terraform state pull > /dev/null 2>&1; then
+            if docker run --rm \
+              -v $(pwd):/workspace \
+              -w /workspace \
+              -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+              -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+              -e AWS_REGION=${{ env.AWS_REGION }} \
+              muzaparoff/terraform-runner:latest \
+              state pull > /dev/null 2>&1; then
               break
             fi
             echo "Waiting for state lock... attempt $i"
             sleep 10
           done
 
-          # Get output with error handling
-          CLUSTER_NAME=$(terraform output -json eks_cluster_name 2>/dev/null | jq -r '.')
+          CLUSTER_NAME=$(docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_REGION=${{ env.AWS_REGION }} \
+            muzaparoff/terraform-runner:latest \
+            output -json eks_cluster_name 2>/dev/null | jq -r '.')
           if [ "$?" -eq 0 ] && [ ! -z "$CLUSTER_NAME" ]; then
             echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
           else
@@ -158,7 +177,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          token: ${{ secrets.PAT_TOKEN }}  # Use PAT token instead of GITHUB_TOKEN
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Git Setup
         run: |
@@ -187,10 +206,8 @@ jobs:
         run: |
           aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
           
-          # Apply ArgoCD application with dynamic version
           cat k8s/argocd-app.yaml | sed "s/valueFiles:.*/valueFiles:\n      - values.yaml\n      - values-${APP_VERSION}.yaml/" | kubectl apply -f -
           
-          # Create version-specific values file
           echo "imageTag: ${APP_VERSION}" > helm/lab-app/values-${APP_VERSION}.yaml
           
           kubectl wait --for=condition=ready -n argocd application/lab-app --timeout=300s
