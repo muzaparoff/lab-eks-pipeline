@@ -123,6 +123,20 @@ jobs:
           TF_VAR_certificate_key: ${{ secrets.GH_CERT_KEY }}
         run: |
           cd terraform
+
+          # Clean up existing ArgoCD installation
+          echo "Cleaning up existing ArgoCD installation..."
+          kubectl delete namespace argocd --ignore-not-found=true || true
+          kubectl delete crd applications.argoproj.io --ignore-not-found=true || true
+          kubectl delete crd applicationsets.argoproj.io --ignore-not-found=true || true
+          kubectl delete crd appprojects.argoproj.io --ignore-not-found=true || true
+
+          # Wait for namespace deletion
+          while kubectl get namespace argocd >/dev/null 2>&1; do
+            echo "Waiting for argocd namespace deletion..."
+            sleep 5
+          done
+
           # First initialize with reconfigure flag
           docker run --rm \
             -v $(pwd):/workspace \
