@@ -400,78 +400,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   ]
 }
 
-// Add cleanup for existing ArgoCD installation
-resource "null_resource" "cleanup_argocd" {
-  triggers = {
-    cluster_endpoint = aws_eks_cluster.this.endpoint
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      echo "Cleaning up existing ArgoCD resources..."
-      kubectl delete namespace argocd --ignore-not-found=true
-      kubectl wait --for=delete namespace/argocd --timeout=300s || true
-      
-      # Cleanup potential leftover CRDs
-      kubectl delete crd applications.argoproj.io --ignore-not-found=true
-      kubectl delete crd applicationsets.argoproj.io --ignore-not-found=true
-      kubectl delete crd appprojects.argoproj.io --ignore-not-found=true
-      
-      echo "Waiting for resources to be fully deleted..."
-      sleep 30
-    EOT
-  }
-
-  depends_on = [aws_eks_cluster.this]
-}
-
-// ArgoCD Installation with cleanup dependency
-resource "helm_release" "argocd" {
-  name             = "argocd-${random_id.suffix.hex}"
-  repository       = "https://argoproj.github.io/argo-helm"
-  chart            = "argo-cd"
-  namespace        = "argocd"
-  create_namespace = true
-  version          = "5.46.7"
-  
-  force_update  = true
-  replace       = true
-  wait         = true
-  timeout      = 900
-
-  values = [
-    <<-EOT
-    server:
-      extraArgs:
-        - --insecure
-    configs:
-      secret:
-        createSecret: true
-    dex:
-      enabled: false
-    notifications:
-      enabled: false
-    applicationSet:
-      enabled: true
-    EOT
-  ]
-
-  set {
-    name  = "crds.install"
-    value = "true"
-  }
-
-  depends_on = [
-    aws_eks_cluster.this,
-    kubernetes_config_map_v1_data.aws_auth,
-    null_resource.cleanup_argocd
-  ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
+// Clean up and install ArgoCD
 resource "null_resource" "cleanup_argocd" {
   triggers = {
     cluster_endpoint = aws_eks_cluster.this.endpoint
@@ -503,6 +432,7 @@ resource "null_resource" "cleanup_argocd" {
   depends_on = [aws_eks_cluster.this]
 }
 
+// ArgoCD Installation
 resource "helm_release" "argocd" {
   name             = "argocd-${random_id.suffix.hex}"
   repository       = "https://argoproj.github.io/argo-helm"
