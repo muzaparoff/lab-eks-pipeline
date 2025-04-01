@@ -73,18 +73,27 @@ jobs:
       - name: Determine Versions
         id: semver
         run: |
-          # Get latest versions from versions.json if exists
+          # Initialize versions with defaults
+          APP_VERSION="0.0.1"
+          INFRA_VERSION="0.0.1"
+          
+          # Try to get versions from file
           if [[ -f versions.json ]]; then
-            APP_VERSION=$(jq -r .app_version versions.json)
-            INFRA_VERSION=$(jq -r .infra_version versions.json)
-          else
-            APP_VERSION="0.0.0"
-            INFRA_VERSION="0.0.0"
+            FILE_APP_VERSION=$(jq -r .app_version versions.json)
+            FILE_INFRA_VERSION=$(jq -r .infra_version versions.json)
+            
+            # Use file versions if they're valid semver and greater than defaults
+            if [[ "$FILE_APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$(printf '%s\n' "$APP_VERSION" "$FILE_APP_VERSION" | sort -V | tail -n1)" = "$FILE_APP_VERSION" ]]; then
+              APP_VERSION=$FILE_APP_VERSION
+            fi
+            if [[ "$FILE_INFRA_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$(printf '%s\n' "$INFRA_VERSION" "$FILE_INFRA_VERSION" | sort -V | tail -n1)" = "$FILE_INFRA_VERSION" ]]; then
+              INFRA_VERSION=$FILE_INFRA_VERSION
+            fi
           fi
-
+          
           # Detect changes
-          APP_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(app/|helm/)")
-          INFRA_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(terraform/|docker/)")
+          APP_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(app/|helm/)" || true)
+          INFRA_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(terraform/|docker/)" || true)
           
           if [[ ! -z "$APP_CHANGES" ]]; then
             APP_VERSION=$(echo $APP_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
@@ -96,16 +105,18 @@ jobs:
           
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
           echo "infra_version=$INFRA_VERSION" >> $GITHUB_OUTPUT
-
-          # Update versions file
+          
+          # Always update versions file
           echo "{\"app_version\":\"$APP_VERSION\",\"infra_version\":\"$INFRA_VERSION\"}" > versions.json
           
-          if [[ ! -z "$APP_CHANGES" ]] || [[ ! -z "$INFRA_CHANGES" ]]; then
+          # Only commit if there are changes
+          if ! git diff --quiet versions.json; then
             git config --global user.name "GitHub Actions"
             git config --global user.email "actions@github.com"
             git add versions.json
             git commit -m "chore: update versions [skip ci]"
             git push
+          fi
 
   build-terraform-runner:
     needs: version
