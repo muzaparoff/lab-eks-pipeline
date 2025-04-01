@@ -31,6 +31,10 @@ resource "aws_security_group" "rds_sg" {
   tags = {
     Name = "lab-eks-rds-sg"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_db_instance" "this" {
@@ -50,5 +54,9 @@ resource "aws_db_instance" "this" {
 
   tags = {
     Name = "lab-eks-rds"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
