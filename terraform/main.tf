@@ -97,6 +97,8 @@ module "route53_acm" {
   cert_domain = var.cert_domain
   vpc_id = module.vpc.vpc_id
   cluster_endpoint = module.eks.cluster_endpoint
+  certificate_body = var.certificate_body
+  certificate_key = var.certificate_key
 
   depends_on = [
     module.vpc,
