@@ -18,8 +18,8 @@ jobs:
   get-terraform-outputs:
     runs-on: ubuntu-latest
     outputs:
-      ecr_frontend: ${{ steps.tf-outputs.outputs.ecr_frontend }}
-      ecr_backend: ${{ steps.tf-outputs.outputs.ecr_backend }}
+      ecr_frontend: ${{ steps.get-ecr.outputs.frontend_url }}
+      ecr_backend: ${{ steps.get-ecr.outputs.backend_url }}
     steps:
       - uses: actions/checkout@v3
       
@@ -35,13 +35,17 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
-      - name: Get Terraform Outputs
-        id: tf-outputs
+      - name: Get ECR URLs
+        id: get-ecr
         working-directory: terraform
         run: |
           terraform init
-          echo "ecr_frontend=$(terraform output -raw ecr_frontend_repository_url)" >> $GITHUB_OUTPUT
-          echo "ecr_backend=$(terraform output -raw ecr_backend_repository_url)" >> $GITHUB_OUTPUT
+          # Try to get outputs, use placeholder if not available
+          FRONTEND_URL=$(terraform output -raw ecr_frontend_repository_url 2>/dev/null || echo "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-frontend")
+          BACKEND_URL=$(terraform output -raw ecr_backend_repository_url 2>/dev/null || echo "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-backend")
+          
+          echo "frontend_url=${FRONTEND_URL}" >> $GITHUB_OUTPUT
+          echo "backend_url=${BACKEND_URL}" >> $GITHUB_OUTPUT
 
   version:
     needs: get-terraform-outputs
