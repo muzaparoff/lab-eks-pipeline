@@ -93,6 +93,7 @@ module "rds" {
   db_password = var.db_password
   db_engine   = var.db_engine
   db_name     = var.db_name
+  backend_sg_id = module.eks.backend_security_group_id
 }
 
 module "route53_acm" {

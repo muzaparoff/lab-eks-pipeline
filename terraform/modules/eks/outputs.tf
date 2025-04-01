@@ -14,3 +14,8 @@ output "cluster_ca_certificate" {
 output "vpc_id" {
   value = var.vpc_id
 }
+
+output "backend_security_group_id" {
+  value = aws_security_group.node_group.id
+  description = "Security group ID for EKS node group (used by backend pods)"
+}
