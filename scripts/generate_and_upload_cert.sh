@@ -6,24 +6,27 @@ CERT_DIR="certificates"
 
 mkdir -p $CERT_DIR
 
-# Generate clean certificate without chain
+# Check if certificate already exists in ACM
+EXISTING_CERT=$(aws acm list-certificates --query "CertificateSummaryList[?DomainName=='${DOMAIN}'].CertificateArn" --output text)
+
+if [ ! -z "$EXISTING_CERT" ]; then
+    echo "Certificate already exists in ACM with ARN: $EXISTING_CERT"
+    exit 0
+fi
+
+# Generate certificate only if it doesn't exist
 openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
   -keyout $CERT_DIR/private.key \
   -out $CERT_DIR/certificate.crt \
   -subj "/CN=${DOMAIN}" \
   -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}"
 
-# Properly format and encode certificate
-CERT_BODY=$(cat $CERT_DIR/certificate.crt | grep -v "CERTIFICATE" | tr -d '\n')
-CERT_KEY=$(cat $CERT_DIR/private.key | grep -v "PRIVATE KEY" | tr -d '\n')
+# Base64 encode entire files
+CERT_BODY=$(cat $CERT_DIR/certificate.crt | base64 -w 0)
+CERT_KEY=$(cat $CERT_DIR/private.key | base64 -w 0)
 
 echo "Add these values to GitHub secrets:"
 echo -e "\nGH_CERT_BODY:"
-echo "-----BEGIN CERTIFICATE-----"
-echo "$CERT_BODY" | fold -w 64
-echo "-----END CERTIFICATE-----" | base64
-
+echo "$CERT_BODY"
 echo -e "\nGH_CERT_KEY:"
-echo "-----BEGIN PRIVATE KEY-----"
-echo "$CERT_KEY" | fold -w 64
-echo "-----END PRIVATE KEY-----" | base64
+echo "$CERT_KEY"
