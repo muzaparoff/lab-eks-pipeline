@@ -78,15 +78,11 @@ resource "aws_acm_certificate" "cert" {
   }
 }
 
-# Add Route53 record
+// Update Route53 record to use CNAME instead of ALB alias
 resource "aws_route53_record" "app" {
   zone_id = aws_route53_zone.internal.zone_id
   name    = var.cert_domain
-  type    = "A"
-
-  alias {
-    name                   = var.alb_dns_name
-    zone_id               = var.alb_zone_id
-    evaluate_target_health = true
-  }
+  type    = "CNAME"
+  ttl     = "300"
+  records = [var.cluster_endpoint]
 }

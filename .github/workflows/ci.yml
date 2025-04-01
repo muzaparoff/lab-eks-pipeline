@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -6,49 +6,90 @@ on:
     paths:
       - 'app/**'
       - 'helm/**'
+      - 'docker/**'
       - '.github/workflows/**'
+      - 'terraform/**'
 
 env:
   AWS_REGION: us-east-1
   ECR_FRONTEND: ${{ secrets.ECR_FRONTEND_URL }}
   ECR_BACKEND: ${{ secrets.ECR_BACKEND_URL }}
+  TERRAFORM_VERSION: "1.5.7"
 
 jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
-      new_version: ${{ steps.semver.outputs.new_version }}
+      app_version: ${{ steps.semver.outputs.app_version }}
+      infra_version: ${{ steps.semver.outputs.infra_version }}
     steps:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      
-      - name: Determine Version
+
+      - name: Determine Versions
         id: semver
         run: |
-          # Try to get the latest tag, if none exists set to 0.0.0
-          LAST_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-          
-          if [[ "$LAST_VERSION" == "0.0.0" ]]; then
-            NEW_VERSION="0.0.1"
+          # Get latest versions from versions.json if exists
+          if [[ -f versions.json ]]; then
+            APP_VERSION=$(jq -r .app_version versions.json)
+            INFRA_VERSION=$(jq -r .infra_version versions.json)
           else
-            MSG=$(git log -1 --pretty=%B)
-            if [[ "$MSG" == ver:* ]]; then
-              NEW_VERSION=$(echo $LAST_VERSION | awk -F. '{print $1"."$2+1".0"}')
-            elif [[ "$MSG" == feat:* ]]; then
-              NEW_VERSION=$(echo $LAST_VERSION | awk -F. '{print $1"."$2+1".0"}')
-            elif [[ "$MSG" == fix:* ]]; then
-              NEW_VERSION=$(echo $LAST_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
-            else
-              NEW_VERSION=$LAST_VERSION
-            fi
+            APP_VERSION="0.0.0"
+            INFRA_VERSION="0.0.0"
+          fi
+
+          # Detect changes
+          APP_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(app/|helm/)")
+          INFRA_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(terraform/|docker/)")
+          
+          if [[ ! -z "$APP_CHANGES" ]]; then
+            APP_VERSION=$(echo $APP_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
           fi
           
-          echo "Determined version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          if [[ ! -z "$INFRA_CHANGES" ]]; then
+            INFRA_VERSION=$(echo $INFRA_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
+          fi
+          
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "infra_version=$INFRA_VERSION" >> $GITHUB_OUTPUT
 
-  build:
+          # Update versions file
+          echo "{\"app_version\":\"$APP_VERSION\",\"infra_version\":\"$INFRA_VERSION\"}" > versions.json
+          
+          if [[ ! -z "$APP_CHANGES" ]] || [[ ! -z "$INFRA_CHANGES" ]]; then
+            git config --global user.name "GitHub Actions"
+            git config --global user.email "actions@github.com"
+            git add versions.json
+            git commit -m "chore: update versions [skip ci]"
+            git push
+
+  build-terraform-runner:
     needs: version
+    if: contains(github.event.head_commit.modified, 'docker/Terraform.dockerfile')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and push Terraform runner
+        run: |
+          RUNNER_TAG=${{ needs.version.outputs.infra_version }}
+          docker build -t terraform-runner:${RUNNER_TAG} \
+            --build-arg TERRAFORM_VERSION=${TERRAFORM_VERSION} \
+            -f docker/Terraform.dockerfile .
+          docker tag terraform-runner:${RUNNER_TAG} terraform-runner:latest
+          # Push to ECR if needed
+
+  build-app:
+    needs: version
+    if: contains(github.event.head_commit.modified, 'app/') || contains(github.event.head_commit.modified, 'helm/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -66,27 +107,20 @@ jobs:
 
       - name: Build and push images
         env:
-          VERSION: ${{ needs.version.outputs.new_version }}
+          VERSION: ${{ needs.version.outputs.app_version }}
         run: |
-          # Build and push frontend
           docker build -t $ECR_FRONTEND:$VERSION -t $ECR_FRONTEND:latest ./app/frontend
           docker push $ECR_FRONTEND:$VERSION
           docker push $ECR_FRONTEND:latest
 
-          # Build and push backend
           docker build -t $ECR_BACKEND:$VERSION -t $ECR_BACKEND:latest ./app/backend
           docker push $ECR_BACKEND:$VERSION
           docker push $ECR_BACKEND:latest
 
-      - name: Update Helm chart
-        if: needs.version.outputs.new_version != ''
+      - name: Update Helm values
         run: |
-          VERSION=${{ needs.version.outputs.new_version }}
+          VERSION=${{ needs.version.outputs.app_version }}
           sed -i "s/tag:.*/tag: ${VERSION}/" helm/lab-app/values.yaml
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
           git add helm/lab-app/values.yaml
-          git commit -m "Update image version to ${VERSION}"
+          git commit -m "chore: update app version [skip ci]"
           git push
-          git tag $VERSION
-          git push --tags

@@ -36,7 +36,7 @@ resource "aws_db_instance" "this" {
   allocated_storage      = 20
   engine                 = var.db_engine
   engine_version         = var.db_engine == "postgres" ? "15.5" : "8.0"  # Updated to latest supported version
-  instance_class         = "db.t3.micro"
+  instance_class         = "db.t4g.micro"
   db_name                = var.db_name
   username               = var.db_username
   password               = var.db_password

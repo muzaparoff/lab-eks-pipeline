@@ -38,6 +38,7 @@ alias tf='docker run --rm -it \
   -v $(pwd):/workspace \
   -w /workspace \
   -e AWS_PROFILE=lab-admin \
+  -e TF_VAR_db_password=NbIhT9lMDJhyfYyLVw7Wfw== \
   terraform-runner'
 ```
 

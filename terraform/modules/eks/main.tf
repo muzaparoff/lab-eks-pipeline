@@ -18,7 +18,11 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
   role       = aws_iam_role.eks_cluster_role.name
 }
 
-# Create cluster security group
+resource "aws_iam_role_policy_attachment" "eks_cluster_admin" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.eks_cluster_role.name
+}
+
 resource "aws_security_group" "eks_cluster" {
   name        = "${var.cluster_name}-cluster-sg"
   description = "Security group for EKS cluster"
@@ -60,78 +64,90 @@ resource "aws_eks_cluster" "this" {
   tags = {
     Name = var.cluster_name
   }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy
+  ]
+
+  timeouts {
+    delete = "30m"
+  }
 }
 
-resource "aws_iam_role" "eks_fargate_role" {
-  name = "${var.cluster_name}-fargate-role"
+// Create managed node group
+resource "aws_iam_role" "node_group" {
+  name = "${var.cluster_name}-node-group-role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [{
-      Action    = "sts:AssumeRole",
-      Effect    = "Allow",
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
       Principal = {
-        Service = "eks-fargate-pods.amazonaws.com"
+        Service = "ec2.amazonaws.com"
       }
     }]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "eks_fargate_AmazonEKSFargatePodExecutionRolePolicy" {
-  role       = aws_iam_role.eks_fargate_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
-}
-
-resource "aws_eks_fargate_profile" "default" {
-  cluster_name           = aws_eks_cluster.this.name
-  fargate_profile_name   = "${var.cluster_name}-fargate-profile"
-  pod_execution_role_arn = aws_iam_role.eks_fargate_role.arn
-  subnet_ids             = var.private_subnets
-
-  selector {
-    namespace = "default"
+resource "aws_iam_role_policy_attachment" "node_group_policies" {
+  for_each = {
+    AmazonEKSWorkerNodePolicy          = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+    AmazonEKS_CNI_Policy              = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+    AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   }
 
-  selector {
-    namespace = "lab-app"
-  }
+  policy_arn = each.value
+  role       = aws_iam_role.node_group.name
 }
 
-# Create OIDC provider (required for IRSA)
+resource "aws_eks_node_group" "this" {
+  cluster_name    = aws_eks_cluster.this.name
+  node_group_name = "${var.cluster_name}-node-group"
+  node_role_arn   = aws_iam_role.node_group.arn
+  subnet_ids      = var.private_subnets
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 3
+    min_size     = 1
+  }
+
+  instance_types = ["t3.medium"]
+
+  depends_on = [
+    aws_iam_role_policy_attachment.node_group_policies
+  ]
+}
+
+// Create OIDC provider (required for IRSA)
 data "aws_eks_cluster" "cluster" {
   name = aws_eks_cluster.this.name
 }
 
-# Check for existing OIDC provider
-data "aws_iam_openid_connect_provider" "existing" {
-  count = 1
-  url   = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-}
-
+// Create new OIDC provider
 resource "aws_iam_openid_connect_provider" "oidc" {
-  count = data.aws_iam_openid_connect_provider.existing[0] == null ? 1 : 0
-  
   client_id_list  = ["sts.amazonaws.com"]
   url             = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
   thumbprint_list = ["9e99a48a9960b14926bb7f3b02e22da0eabb0c4f"]
 }
 
 locals {
-  oidc_provider_arn = data.aws_iam_openid_connect_provider.existing[0] != null ? data.aws_iam_openid_connect_provider.existing[0].arn : aws_iam_openid_connect_provider.oidc[0].arn
+  oidc_provider_arn = aws_iam_openid_connect_provider.oidc.arn
 }
 
-# Create IAM role for ALB controller
+// Create IAM role for ALB controller
 resource "aws_iam_role" "alb_controller" {
   name = "${var.cluster_name}-alb-controller"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [{
-      Effect = "Allow"
+      Effect = "Allow",
       Principal = {
-        Federated = local.oidc_provider_arn
-      }
-      Action = "sts:AssumeRoleWithWebIdentity"
+        Federated = aws_iam_openid_connect_provider.oidc.arn
+      },
+      Action = "sts:AssumeRoleWithWebIdentity",
       Condition = {
         StringEquals = {
           "${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
@@ -141,7 +157,36 @@ resource "aws_iam_role" "alb_controller" {
   })
 }
 
-# Modify wait_for_cluster to use AWS CLI for validation
+// Add IAM policy for ALB controller
+resource "aws_iam_role_policy" "alb_controller" {
+  name = "${var.cluster_name}-alb-controller-policy"
+  role = aws_iam_role.alb_controller.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:DescribeSecurityGroups",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:DescribeInstances",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVpcs",
+          "ec2:CreateTags",
+          "elasticloadbalancing:*",
+          "iam:CreateServiceLinkedRole"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+// Modify wait_for_cluster to use AWS CLI for validation
 resource "null_resource" "wait_for_cluster" {
   depends_on = [aws_eks_cluster.this]
 
@@ -158,14 +203,14 @@ resource "null_resource" "wait_for_cluster" {
         --region ${data.aws_region.current.name}
       
       echo "Testing cluster connectivity..."
-      /usr/local/bin/kubectl get nodes --timeout=5m
+      timeout 300s bash -c 'until /usr/local/bin/kubectl get nodes; do sleep 10; done'
     EOT
   }
 }
 
 data "aws_region" "current" {}
 
-# Create aws-auth ConfigMap
+// Update aws-auth ConfigMap
 resource "kubernetes_config_map" "aws_auth" {
   metadata {
     name      = "aws-auth"
@@ -175,24 +220,31 @@ resource "kubernetes_config_map" "aws_auth" {
   data = {
     mapRoles = yamlencode([
       {
-        rolearn  = aws_iam_role.eks_fargate_role.arn
-        username = "system:node:{{SessionName}}"
+        rolearn  = aws_iam_role.node_group.arn
+        username = "system:node:{{EC2PrivateDNSName}}"
         groups   = ["system:bootstrappers", "system:nodes"]
       },
       {
-        rolearn  = data.aws_caller_identity.current.arn
+        rolearn  = aws_iam_role.eks_cluster_role.arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups   = ["system:bootstrappers", "system:nodes"]
+      }
+    ])
+    mapUsers = yamlencode([
+      {
+        userarn  = data.aws_caller_identity.current.arn
         username = "admin"
         groups   = ["system:masters"]
       }
     ])
   }
 
-  depends_on = [null_resource.wait_for_cluster]
+  depends_on = [aws_eks_cluster.this, null_resource.wait_for_cluster]
 }
 
 data "aws_caller_identity" "current" {}
 
-# Add RBAC role for admin
+// Add RBAC role for admin
 resource "kubernetes_cluster_role_binding" "admin" {
   metadata {
     name = "eks-admin"
@@ -213,51 +265,55 @@ resource "kubernetes_cluster_role_binding" "admin" {
   depends_on = [kubernetes_config_map.aws_auth]
 }
 
-# Install ALB controller
+// Add cluster admin binding
+resource "kubernetes_cluster_role_binding" "cluster_admin" {
+  metadata {
+    name = "terraform-admin"
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = "cluster-admin"
+  }
+
+  subject {
+    kind      = "User"
+    name      = "admin"
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  depends_on = [kubernetes_config_map.aws_auth]
+}
+
+// Install ALB controller with increased timeout and better error handling
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
+  version    = "1.4.4"
 
-  set {
-    name  = "clusterName"
-    value = aws_eks_cluster.this.name
-  }
+  values = [
+    <<-EOT
+    clusterName: ${var.cluster_name}
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: ${aws_iam_role.alb_controller.arn}
+    region: ${data.aws_region.current.name}
+    vpcId: ${var.vpc_id}
+    ingressClass: alb
+    EOT
+  ]
 
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.alb_controller.arn
-  }
-
-  timeout = 600  # 10 minutes
+  timeout = 300
   wait    = true
+  atomic  = false
 
   depends_on = [
     aws_eks_cluster.this,
-    null_resource.wait_for_cluster
+    aws_eks_node_group.this,
+    kubernetes_config_map.aws_auth
   ]
-}
-
-# Wait for ALB controller deployment
-resource "time_sleep" "wait_for_alb" {
-  depends_on = [helm_release.aws_load_balancer_controller]
-  create_duration = "30s"
-}
-
-# Get ALB details
-data "kubernetes_service" "alb_controller" {
-  depends_on = [time_sleep.wait_for_alb]
-  metadata {
-    name = "aws-load-balancer-controller"
-    namespace = "kube-system"
-  }
-}
-
-data "aws_lb" "alb" {
-  depends_on = [time_sleep.wait_for_alb]
-  tags = {
-    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
-    "kubernetes.io/service-name" = "kube-system/aws-load-balancer-controller"
-  }
 }
