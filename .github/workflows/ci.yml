@@ -18,8 +18,8 @@ jobs:
   get-terraform-outputs:
     runs-on: ubuntu-latest
     outputs:
-      ecr_frontend: ${{ steps.get-ecr.outputs.frontend_url }}
-      ecr_backend: ${{ steps.get-ecr.outputs.backend_url }}
+      ecr_frontend: ${{ steps.construct-urls.outputs.frontend_url }}
+      ecr_backend: ${{ steps.construct-urls.outputs.backend_url }}
     steps:
       - uses: actions/checkout@v3
       
@@ -30,30 +30,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Get or construct ECR URLs
-        id: get-ecr
+      - name: Get Account ID and Construct ECR URLs
+        id: construct-urls
         run: |
-          # Default ECR URLs based on account and region
-          DEFAULT_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-frontend"
-          DEFAULT_BACKEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-backend"
-
+          # Get AWS account ID directly from credentials
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text || echo "000000000000")
+          
+          # Construct default ECR URLs
+          FRONTEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-frontend"
+          BACKEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-backend"
+          
+          # Try to get from Terraform state if it exists
           cd terraform
-          if terraform init > /dev/null 2>&1 && terraform output -json > /dev/null 2>&1; then
-            FRONTEND_URL=$(terraform output -raw ecr_frontend_repository_url)
-            BACKEND_URL=$(terraform output -raw ecr_backend_repository_url)
-          else
-            FRONTEND_URL=$DEFAULT_FRONTEND
-            BACKEND_URL=$DEFAULT_BACKEND
-            echo "::warning::Using default ECR URLs as terraform outputs are not available"
+          if [ -f ".terraform/terraform.tfstate" ] && terraform init -backend=false >/dev/null 2>&1; then
+            TF_FRONTEND=$(terraform output -raw ecr_frontend_repository_url 2>/dev/null)
+            TF_BACKEND=$(terraform output -raw ecr_backend_repository_url 2>/dev/null)
+            
+            # Use Terraform outputs if they exist
+            if [ ! -z "$TF_FRONTEND" ] && [ ! -z "$TF_BACKEND" ]; then
+              FRONTEND_URL=$TF_FRONTEND
+              BACKEND_URL=$TF_BACKEND
+            fi
           fi
           
           echo "frontend_url=${FRONTEND_URL}" >> $GITHUB_OUTPUT
           echo "backend_url=${BACKEND_URL}" >> $GITHUB_OUTPUT
+        env:
+          CLUSTER_NAME: lab-eks-cluster
+          AWS_REGION: ${{ env.AWS_REGION }}
 
   version:
     needs: get-terraform-outputs
