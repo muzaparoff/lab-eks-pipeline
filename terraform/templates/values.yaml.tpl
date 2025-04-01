@@ -1,6 +1,6 @@
 frontend:
   image:
-    repository: ${ecr_frontend_url}
+    repository: muzaparoff/lab-eks-cluster-frontend
     tag: latest
   env:
     - name: BACKEND_URL
@@ -10,7 +10,7 @@ frontend:
 
 backend:
   image:
-    repository: ${ecr_backend_url}
+    repository: muzaparoff/lab-eks-cluster-backend
     tag: latest
   env:
     - name: DB_HOST

@@ -18,8 +18,8 @@ jobs:
   get-terraform-outputs:
     runs-on: ubuntu-latest
     outputs:
-      ecr_frontend: ${{ steps.construct-urls.outputs.frontend_url }}
-      ecr_backend: ${{ steps.construct-urls.outputs.backend_url }}
+      ecr_frontend: ${{ steps.get-urls.outputs.frontend_url }}
+      ecr_backend: ${{ steps.get-urls.outputs.backend_url }}
     steps:
       - uses: actions/checkout@v3
       
@@ -30,33 +30,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get Account ID and Construct ECR URLs
-        id: construct-urls
+      - name: Get ECR URLs
+        id: get-urls
         run: |
-          # Get AWS account ID directly from credentials
-          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text || echo "000000000000")
+          # Get AWS Account ID
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
           
-          # Construct default ECR URLs
-          FRONTEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-frontend"
-          BACKEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-backend"
-          
-          # Try to get from Terraform state if it exists
-          cd terraform
-          if [ -f ".terraform/terraform.tfstate" ] && terraform init -backend=false >/dev/null 2>&1; then
-            TF_FRONTEND=$(terraform output -raw ecr_frontend_repository_url 2>/dev/null)
-            TF_BACKEND=$(terraform output -raw ecr_backend_repository_url 2>/dev/null)
-            
-            # Use Terraform outputs if they exist
-            if [ ! -z "$TF_FRONTEND" ] && [ ! -z "$TF_BACKEND" ]; then
-              FRONTEND_URL=$TF_FRONTEND
-              BACKEND_URL=$TF_BACKEND
-            fi
-          fi
+          # Set default URLs based on naming convention
+          FRONTEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/lab-eks-cluster-frontend"
+          BACKEND_URL="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/lab-eks-cluster-backend"
           
           echo "frontend_url=${FRONTEND_URL}" >> $GITHUB_OUTPUT
           echo "backend_url=${BACKEND_URL}" >> $GITHUB_OUTPUT
         env:
-          CLUSTER_NAME: lab-eks-cluster
           AWS_REGION: ${{ env.AWS_REGION }}
 
   version:
@@ -135,36 +121,31 @@ jobs:
           # Push to ECR if needed
 
   build-app:
-    needs: [version, get-terraform-outputs]
+    needs: [version]
     if: contains(github.event.head_commit.modified, 'app/') || contains(github.event.head_commit.modified, 'helm/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push images
         env:
           VERSION: ${{ needs.version.outputs.app_version }}
-          ECR_FRONTEND: ${{ needs.get-terraform-outputs.outputs.ecr_frontend }}
-          ECR_BACKEND: ${{ needs.get-terraform-outputs.outputs.ecr_backend }}
+          DOCKER_FRONTEND: muzaparoff/lab-eks-cluster-frontend
+          DOCKER_BACKEND: muzaparoff/lab-eks-cluster-backend
         run: |
-          docker build -t $ECR_FRONTEND:$VERSION -t $ECR_FRONTEND:latest ./app/frontend
-          docker push $ECR_FRONTEND:$VERSION
-          docker push $ECR_FRONTEND:latest
+          docker build -t $DOCKER_FRONTEND:$VERSION -t $DOCKER_FRONTEND:latest ./app/frontend
+          docker push $DOCKER_FRONTEND:$VERSION
+          docker push $DOCKER_FRONTEND:latest
 
-          docker build -t $ECR_BACKEND:$VERSION -t $ECR_BACKEND:latest ./app/backend
-          docker push $ECR_BACKEND:$VERSION
-          docker push $ECR_BACKEND:latest
+          docker build -t $DOCKER_BACKEND:$VERSION -t $DOCKER_BACKEND:latest ./app/backend
+          docker push $DOCKER_BACKEND:$VERSION
+          docker push $DOCKER_BACKEND:latest
 
       - name: Update Helm values
         run: |

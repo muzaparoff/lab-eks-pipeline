@@ -108,63 +108,6 @@ module "windows_instance" {
   private_subnets = module.vpc.private_subnets
 }
 
-# Add ECR repositories
-resource "aws_ecr_repository" "frontend" {
-  name                 = "${var.cluster_name}-frontend"
-  image_tag_mutability = var.ecr_image_tag_mutability
-
-  image_scanning_configuration {
-    scan_on_push = var.enable_ecr_scan_on_push
-  }
-}
-
-resource "aws_ecr_repository" "backend" {
-  name                 = "${var.cluster_name}-backend"
-  image_tag_mutability = var.ecr_image_tag_mutability
-
-  image_scanning_configuration {
-    scan_on_push = var.enable_ecr_scan_on_push
-  }
-}
-
-# Add ECR access policy for GitHub Actions
-resource "aws_iam_user" "github_actions" {
-  name = "github-actions-user"
-}
-
-resource "aws_iam_access_key" "github_actions" {
-  user = aws_iam_user.github_actions.name
-}
-
-resource "aws_iam_user_policy" "github_actions_policy" {
-  name = "github-actions-policy"
-  user = aws_iam_user.github_actions.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DescribeRepositories",
-          "ecr:ListImages",
-          "ecr:DescribeImages",
-          "ecr:BatchGetImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:PutImage"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
 # Add AWS Load Balancer Controller Helm release
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
@@ -198,8 +141,6 @@ resource "helm_release" "argocd" {
 
 resource "local_file" "helm_values" {
   content = templatefile("${path.module}/templates/values.yaml.tpl", {
-    ecr_frontend_url    = aws_ecr_repository.frontend.repository_url
-    ecr_backend_url     = aws_ecr_repository.backend.repository_url
     rds_endpoint        = module.rds.endpoint
     db_name            = var.db_name
     app_version        = var.app_version
@@ -207,13 +148,4 @@ resource "local_file" "helm_values" {
     acm_certificate_arn = module.route53_acm.certificate_arn
   })
   filename = "${path.module}/../helm/lab-app/values.yaml"
-}
-
-output "github_actions_key_id" {
-  value = aws_iam_access_key.github_actions.id
-}
-
-output "github_actions_secret" {
-  value     = aws_iam_access_key.github_actions.secret
-  sensitive = true
 }
