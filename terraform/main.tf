@@ -98,7 +98,11 @@ module "route53_acm" {
   vpc_id = module.vpc.vpc_id
   cluster_endpoint = module.eks.cluster_endpoint
 
-  depends_on = [module.vpc, module.eks]
+  depends_on = [
+    module.vpc,
+    module.eks,
+    aws_acm_certificate.existing  # Add this line if you have a pre-existing certificate
+  ]
 }
 
 module "windows_instance" {
