@@ -11,23 +11,15 @@ resource "aws_route53_zone" "internal" {
   }
 }
 
-# First check for existing certificate
+# First try to find existing certificate
 data "aws_acm_certificate" "existing" {
+  count    = 0  # Disable lookup to avoid errors when certificate doesn't exist
   domain   = var.cert_domain
   statuses = ["ISSUED"]
-
-  lifecycle {
-    postcondition {
-      condition     = self.arn != null
-      error_message = "No valid certificate found for domain ${var.cert_domain}"
-    }
-  }
 }
 
-# Only create new certificate if data lookup fails
+# Create new certificate
 resource "aws_acm_certificate" "cert" {
-  count = data.aws_acm_certificate.existing.arn == null ? 1 : 0
-  
   certificate_body = trimspace(var.certificate_body)
   private_key     = trimspace(var.certificate_key)
   
@@ -37,15 +29,11 @@ resource "aws_acm_certificate" "cert" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes = [
-      certificate_body,
-      private_key
-    ]
   }
 }
 
 locals {
-  certificate_arn = try(data.aws_acm_certificate.existing.arn, try(aws_acm_certificate.cert[0].arn, null))
+  certificate_arn = aws_acm_certificate.cert.arn
 }
 
 # Update Route53 record with better error handling
