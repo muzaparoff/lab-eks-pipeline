@@ -1,5 +1,5 @@
 output "certificate_arn" {
-  value = local.certificate_arn
+  value = data.aws_acm_certificate.existing.arn
 }
 
 output "app_domain" {

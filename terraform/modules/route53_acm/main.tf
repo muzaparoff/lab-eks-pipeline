@@ -32,8 +32,3 @@ resource "aws_route53_record" "app" {
   ttl     = "300"
   records = [trimprefix(var.cluster_endpoint, "https://")]
 }
-
-# Update certificate ARN output
-output "certificate_arn" {
-  value = data.aws_acm_certificate.existing.arn
-}
