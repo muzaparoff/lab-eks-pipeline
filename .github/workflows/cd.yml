@@ -30,6 +30,44 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      # Add certificate validation step
+      - name: Validate Certificate Variables
+        run: |
+          # Check if variables are set
+          if [[ -z "${TF_VAR_certificate_body}" ]] || [[ -z "${TF_VAR_certificate_key}" ]]; then
+            echo "Error: Certificate variables are not set"
+            exit 1
+          fi
+          
+          # Validate base64 encoding
+          if echo "${TF_VAR_certificate_body}" | base64 -d > /dev/null 2>&1; then
+            echo "Certificate body is valid base64"
+          else
+            echo "Error: Certificate body is not valid base64"
+            exit 1
+          fi
+          
+          if echo "${TF_VAR_certificate_key}" | base64 -d > /dev/null 2>&1; then
+            echo "Certificate key is valid base64"
+          else
+            echo "Error: Certificate key is not valid base64"
+            exit 1
+          fi
+          
+          # Validate certificate format
+          CERT_CONTENT=$(echo "${TF_VAR_certificate_body}" | base64 -d)
+          if ! echo "$CERT_CONTENT" | grep -q "BEGIN CERTIFICATE" || ! echo "$CERT_CONTENT" | grep -q "END CERTIFICATE"; then
+            echo "Error: Invalid certificate format"
+            exit 1
+          fi
+          
+          # Validate key format
+          KEY_CONTENT=$(echo "${TF_VAR_certificate_key}" | base64 -d)
+          if ! echo "$KEY_CONTENT" | grep -q "BEGIN PRIVATE KEY" || ! echo "$KEY_CONTENT" | grep -q "END PRIVATE KEY"; then
+            echo "Error: Invalid private key format"
+            exit 1
+          fi
+
       - name: Load versions
         id: versions
         run: |
