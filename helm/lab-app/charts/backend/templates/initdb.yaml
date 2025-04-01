@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      containers:
+      - name: init-db
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        command: ["python", "init_db.py"]
+        env:
+          - name: DB_HOST
+            value: {{ .Values.db.host }}
+          - name: DB_NAME
+            value: {{ .Values.db.name }}
+          - name: DB_USER
+            valueFrom:
+              secretKeyRef:
+                name: db-credentials
+                key: username
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: db-credentials
+                key: password
+      restartPolicy: Never
+  backoffLimit: 4

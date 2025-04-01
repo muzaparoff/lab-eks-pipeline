@@ -9,22 +9,23 @@ resource "aws_db_subnet_group" "this" {
 
 resource "aws_security_group" "rds_sg" {
   name        = "lab-eks-rds-sg"
-  description = "Security group for RDS, restrict access to VPC"
+  description = "Security group for RDS, restrict access to backend only"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Allow DB access from within VPC"
-    from_port   = var.db_engine == "postgres" ? 5432 : 3306
-    to_port     = var.db_engine == "postgres" ? 5432 : 3306
-    protocol    = "tcp"
-    cidr_blocks = ["10.10.0.0/16"]
+    description     = "Allow PostgreSQL access from backend"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [var.backend_sg_id]  # Only allow access from backend security group
   }
 
   egress {
+    description = "Allow outbound traffic to VPC only"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["10.10.0.0/16"]
   }
 
   tags = {

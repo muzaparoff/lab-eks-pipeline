@@ -159,6 +159,130 @@ git commit -m "fix: correct database connection issue"  # 1.0.0 -> 1.0.1
 tf destroy
 ```
 
+## Development and Testing Workflow
+
+### 1. Local Development
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/lab-eks-pipeline.git
+cd lab-eks-pipeline
+
+# Setup local environment
+./scripts/setup_terraform_backend.sh  # Create S3 bucket and DynamoDB table
+./scripts/generate_password.sh        # Generate RDS password
+./scripts/manage_acm_cert.sh         # Generate and import certificate
+```
+
+### 2. Making Changes
+
+For application changes:
+```bash
+# Frontend/Backend changes
+cd app/frontend  # or app/backend
+# Make your changes
+git commit -m "feat: add new feature"  # Triggers CI pipeline
+git push
+
+# Watch ArgoCD sync status
+kubectl get application -n argocd lab-app -w
+```
+
+For infrastructure changes:
+```bash
+# Test Terraform changes locally
+cd terraform
+terraform init
+terraform plan
+
+# Commit and push
+git commit -m "feat: update infrastructure"
+git push
+```
+
+### 3. Versioning
+
+The repository uses semantic versioning:
+- `ver:` prefix for major version changes
+- `feat:` prefix for feature changes
+- `fix:` prefix for bug fixes
+
+Example:
+```bash
+git commit -m "ver: complete rewrite of backend API"    # 1.0.0 -> 2.0.0
+git commit -m "feat: add user authentication"           # 1.0.0 -> 1.1.0
+git commit -m "fix: correct database connection issue"  # 1.0.0 -> 1.0.1
+```
+
+### 4. Testing Changes
+
+Frontend testing:
+```bash
+# Local testing with Docker
+cd app/frontend
+docker build -t frontend-test .
+docker run -p 5000:5000 \
+  -e BACKEND_URL=http://localhost:5001 \
+  frontend-test
+```
+
+Backend testing:
+```bash
+# Local testing with Docker
+cd app/backend
+docker build -t backend-test .
+docker run -p 5001:5000 \
+  -e DB_HOST=localhost \
+  -e DB_NAME=testdb \
+  -e DB_USER=testuser \
+  -e DB_PASSWORD=testpass \
+  backend-test
+```
+
+Infrastructure testing:
+```bash
+# Test Terraform changes
+cd terraform
+terraform plan                  # Review changes
+terraform apply -target=module.vpc  # Test specific module
+terraform destroy -target=module.vpc  # Clean up test resources
+```
+
+### 5. Monitoring Deployments
+
+```bash
+# Watch ArgoCD sync status
+kubectl get application -n argocd lab-app -w
+
+# Check pod status
+kubectl get pods -n lab-app
+
+# View logs
+kubectl logs -n lab-app -l app=frontend -f  # Frontend logs
+kubectl logs -n lab-app -l app=backend -f   # Backend logs
+
+# Monitor through Grafana
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+# Access at http://localhost:3000
+```
+
+### 6. Troubleshooting
+
+```bash
+# Check ArgoCD status
+argocd app get lab-app
+argocd app sync lab-app --force
+
+# Reset stuck Terraform state
+./scripts/remove_tf_lock.sh
+
+# Validate certificates
+./scripts/validate_and_fix_cert.sh
+
+# Clean up resources for fresh start
+./scripts/cleanup_resources.sh
+```
+
 ## Security Features
 
 - Private VPC configuration

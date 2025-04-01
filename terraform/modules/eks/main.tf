@@ -29,11 +29,19 @@ resource "aws_security_group" "eks_cluster" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Allow API server access"
+    description = "Allow HTTPS API server access"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["10.10.0.0/16"]  # VPC CIDR
+    cidr_blocks = ["10.10.0.0/16"]
+  }
+
+  ingress {
+    description = "Allow worker nodes communication"
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    self        = true
   }
 
   egress {
@@ -45,6 +53,47 @@ resource "aws_security_group" "eks_cluster" {
 
   tags = {
     Name = "${var.cluster_name}-cluster-sg"
+  }
+}
+
+resource "aws_security_group" "node_group" {
+  name        = "${var.cluster_name}-node-group-sg"
+  description = "Security group for EKS node group"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "Allow inter-node communication"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "-1"
+    self        = true
+  }
+
+  ingress {
+    description = "Allow frontend traffic"
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["10.10.0.0/16"]
+  }
+
+  ingress {
+    description = "Allow backend traffic"
+    from_port   = 5001
+    to_port     = 5001
+    protocol    = "tcp"
+    cidr_blocks = ["10.10.0.0/16"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.cluster_name}-node-group-sg"
   }
 }
 
@@ -115,9 +164,22 @@ resource "aws_eks_node_group" "this" {
 
   instance_types = ["t3.medium"]
 
+  launch_template {
+    id      = aws_launch_template.eks_nodes.id
+    version = aws_launch_template.eks_nodes.latest_version
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.node_group_policies
   ]
+}
+
+resource "aws_launch_template" "eks_nodes" {
+  name_prefix = "${var.cluster_name}-node-"
+  
+  vpc_security_group_ids = [aws_security_group.node_group.id]
+  
+  // ...rest of launch template config...
 }
 
 // Create OIDC provider (required for IRSA)

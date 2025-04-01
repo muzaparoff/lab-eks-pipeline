@@ -32,3 +32,8 @@ variable "db_name" {
   default = "my-app-db"
   type        = string
 }
+
+variable "backend_sg_id" {
+  description = "Security group ID of the backend service"
+  type        = string
+}
