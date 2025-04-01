@@ -63,8 +63,34 @@ jobs:
             terraform apply -auto-approve
           fi
 
+  get-terraform-outputs:
+    runs-on: ubuntu-latest
+    outputs:
+      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        working-directory: terraform
+        run: |
+          terraform init
+          echo "cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
+
   deploy-application:
-    needs: deploy-infrastructure
+    needs: [deploy-infrastructure, get-terraform-outputs]
     if: ${{ github.event.inputs.action != 'destroy' }}
     runs-on: ubuntu-latest
     steps:
@@ -85,9 +111,9 @@ jobs:
           rm argocd-linux-amd64
 
       - name: Deploy with ArgoCD
+        env:
+          CLUSTER_NAME: ${{ needs.get-terraform-outputs.outputs.cluster_name }}
         run: |
-          aws eks update-kubeconfig --name lab-eks-cluster --region $AWS_REGION
+          aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
           kubectl apply -f k8s/argocd-app.yaml
-          
-          # Wait for app sync
           kubectl wait --for=condition=ready -n argocd application/lab-app --timeout=300s

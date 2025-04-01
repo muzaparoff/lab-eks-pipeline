@@ -12,12 +12,39 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_FRONTEND: ${{ secrets.ECR_FRONTEND_URL }}
-  ECR_BACKEND: ${{ secrets.ECR_BACKEND_URL }}
   TERRAFORM_VERSION: "1.5.7"
 
 jobs:
+  get-terraform-outputs:
+    runs-on: ubuntu-latest
+    outputs:
+      ecr_frontend: ${{ steps.tf-outputs.outputs.ecr_frontend }}
+      ecr_backend: ${{ steps.tf-outputs.outputs.ecr_backend }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        working-directory: terraform
+        run: |
+          terraform init
+          echo "ecr_frontend=$(terraform output -raw ecr_frontend_repository_url)" >> $GITHUB_OUTPUT
+          echo "ecr_backend=$(terraform output -raw ecr_backend_repository_url)" >> $GITHUB_OUTPUT
+
   version:
+    needs: get-terraform-outputs
     runs-on: ubuntu-latest
     outputs:
       app_version: ${{ steps.semver.outputs.app_version }}
@@ -88,7 +115,7 @@ jobs:
           # Push to ECR if needed
 
   build-app:
-    needs: version
+    needs: [version, get-terraform-outputs]
     if: contains(github.event.head_commit.modified, 'app/') || contains(github.event.head_commit.modified, 'helm/')
     runs-on: ubuntu-latest
     steps:
@@ -108,6 +135,8 @@ jobs:
       - name: Build and push images
         env:
           VERSION: ${{ needs.version.outputs.app_version }}
+          ECR_FRONTEND: ${{ needs.get-terraform-outputs.outputs.ecr_frontend }}
+          ECR_BACKEND: ${{ needs.get-terraform-outputs.outputs.ecr_backend }}
         run: |
           docker build -t $ECR_FRONTEND:$VERSION -t $ECR_FRONTEND:latest ./app/frontend
           docker push $ECR_FRONTEND:$VERSION
