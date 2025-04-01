@@ -203,7 +203,16 @@ resource "null_resource" "wait_for_cluster" {
         --region ${data.aws_region.current.name}
       
       echo "Testing cluster connectivity..."
-      timeout 300s bash -c 'until /usr/local/bin/kubectl get nodes; do sleep 10; done'
+      for i in {1..30}; do
+        if aws eks get-token --cluster-name ${aws_eks_cluster.this.name} > /dev/null 2>&1; then
+          echo "Cluster is accessible"
+          exit 0
+        fi
+        echo "Waiting for cluster to be accessible... attempt $i"
+        sleep 10
+      done
+      echo "Timeout waiting for cluster to be accessible"
+      exit 1
     EOT
   }
 }
