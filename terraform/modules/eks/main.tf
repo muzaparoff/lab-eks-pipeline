@@ -408,12 +408,21 @@ resource "null_resource" "cleanup_argocd" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Cleaning up existing ArgoCD installation..."
+      echo "Cleaning up existing ArgoCD resources..."
       kubectl delete namespace argocd --ignore-not-found=true
-      # Wait for namespace to be fully deleted
       kubectl wait --for=delete namespace/argocd --timeout=300s || true
+      
+      # Cleanup potential leftover CRDs
+      kubectl delete crd applications.argoproj.io --ignore-not-found=true
+      kubectl delete crd applicationsets.argoproj.io --ignore-not-found=true
+      kubectl delete crd appprojects.argoproj.io --ignore-not-found=true
+      
+      echo "Waiting for resources to be fully deleted..."
+      sleep 30
     EOT
   }
+
+  depends_on = [aws_eks_cluster.this]
 }
 
 // ArgoCD Installation with cleanup dependency
@@ -424,6 +433,11 @@ resource "helm_release" "argocd" {
   namespace        = "argocd"
   create_namespace = true
   version          = "5.46.7"
+  
+  force_update  = true
+  replace       = true
+  wait         = true
+  timeout      = 900
 
   values = [
     <<-EOT
