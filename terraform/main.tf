@@ -123,6 +123,19 @@ resource "helm_release" "argocd" {
   depends_on = [module.eks]
 }
 
+# Add ArgoCD application configuration
+resource "kubectl_manifest" "argocd_app" {
+  yaml_body = templatefile("${path.module}/templates/argocd-app.yaml.tpl", {
+    repo_url    = "https://github.com/${var.github_repository}.git"
+    app_version = var.app_version
+  })
+
+  depends_on = [
+    helm_release.argocd,
+    module.eks
+  ]
+}
+
 resource "local_file" "helm_values" {
   content = templatefile("${path.module}/templates/values.yaml.tpl", {
     rds_endpoint = module.rds.endpoint

@@ -4,3 +4,11 @@ description: Lab EKS Application
 type: application
 version: 0.1.0
 appVersion: "{{ .Values.imageTag }}"
+
+dependencies:
+  - name: frontend
+    version: "0.1.0"
+    repository: "file://charts/frontend"
+  - name: backend
+    version: "0.1.0"
+    repository: "file://charts/backend"

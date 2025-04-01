@@ -233,30 +233,3 @@ jobs:
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git
-
-      - name: Load versions
-        id: versions
-        run: |
-          VERSION_FILE="versions.json"
-          if [[ -f "$VERSION_FILE" ]]; then
-            echo "app_version=$(jq -r .app_version $VERSION_FILE)" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
-          rm argocd-linux-amd64
-
-      - name: Deploy with ArgoCD
-        env:
-          CLUSTER_NAME: ${{ needs.get-terraform-outputs.outputs.cluster_name }}
-          APP_VERSION: ${{ needs.versions.outputs.app_version }}
-        run: |
-          aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
-          
-          cat k8s/argocd-app.yaml | sed "s/valueFiles:.*/valueFiles:\n      - values.yaml\n      - values-${APP_VERSION}.yaml/" | kubectl apply -f -
-          
-          echo "imageTag: ${APP_VERSION}" > helm/lab-app/values-${APP_VERSION}.yaml
-          
-          kubectl wait --for=condition=ready -n argocd application/lab-app --timeout=300s
