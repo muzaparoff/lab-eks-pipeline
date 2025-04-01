@@ -35,14 +35,22 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
-      - name: Get ECR URLs
+      - name: Get or construct ECR URLs
         id: get-ecr
-        working-directory: terraform
         run: |
-          terraform init
-          # Try to get outputs, use placeholder if not available
-          FRONTEND_URL=$(terraform output -raw ecr_frontend_repository_url 2>/dev/null || echo "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-frontend")
-          BACKEND_URL=$(terraform output -raw ecr_backend_repository_url 2>/dev/null || echo "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-backend")
+          # Default ECR URLs based on account and region
+          DEFAULT_FRONTEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-frontend"
+          DEFAULT_BACKEND="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lab-eks-cluster-backend"
+
+          cd terraform
+          if terraform init > /dev/null 2>&1 && terraform output -json > /dev/null 2>&1; then
+            FRONTEND_URL=$(terraform output -raw ecr_frontend_repository_url)
+            BACKEND_URL=$(terraform output -raw ecr_backend_repository_url)
+          else
+            FRONTEND_URL=$DEFAULT_FRONTEND
+            BACKEND_URL=$DEFAULT_BACKEND
+            echo "::warning::Using default ECR URLs as terraform outputs are not available"
+          fi
           
           echo "frontend_url=${FRONTEND_URL}" >> $GITHUB_OUTPUT
           echo "backend_url=${BACKEND_URL}" >> $GITHUB_OUTPUT
