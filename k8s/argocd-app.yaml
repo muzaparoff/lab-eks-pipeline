@@ -9,6 +9,11 @@ spec:
     repoURL: https://github.com/muzaparoff/lab-eks-pipeline.git
     targetRevision: HEAD
     path: helm/lab-app
+    helm:
+      valueFiles:
+        - values.yaml
+      values: |
+        imageTag: {{ `{{ index (fromJson (exec "curl" "-s" "https://raw.githubusercontent.com/muzaparoff/lab-eks-pipeline/main/versions.json")) "app_version" }}` }}
   destination:
     server: https://kubernetes.default.svc
     namespace: lab-app

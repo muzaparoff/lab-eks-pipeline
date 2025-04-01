@@ -120,12 +120,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}  # Use PAT token instead of GITHUB_TOKEN
 
       - name: Git Setup
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: Load versions
         id: versions
@@ -144,7 +145,14 @@ jobs:
       - name: Deploy with ArgoCD
         env:
           CLUSTER_NAME: ${{ needs.get-terraform-outputs.outputs.cluster_name }}
+          APP_VERSION: ${{ needs.versions.outputs.app_version }}
         run: |
           aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
-          kubectl apply -f k8s/argocd-app.yaml
+          
+          # Apply ArgoCD application with dynamic version
+          cat k8s/argocd-app.yaml | sed "s/valueFiles:.*/valueFiles:\n      - values.yaml\n      - values-${APP_VERSION}.yaml/" | kubectl apply -f -
+          
+          # Create version-specific values file
+          echo "imageTag: ${APP_VERSION}" > helm/lab-app/values-${APP_VERSION}.yaml
+          
           kubectl wait --for=condition=ready -n argocd application/lab-app --timeout=300s

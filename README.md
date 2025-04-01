@@ -1,6 +1,6 @@
 # Lab EKS Pipeline
 
-This repository contains a fully automated solution for deploying an AWS environment with EKS, a Python front/back application deployed via Helm and ArgoCD, internal ALB with SSL termination (using a self-signed certificate), a private RDS database, GitHub Actions for CI/CD, and monitoring (Grafana/Prometheus). All resources are provisioned via Terraform in the `us-east-1` region.
+This repository contains a fully automated solution for deploying an AWS environment with EKS, a Python front/back application deployed via Helm and ArgoCD, internal ALB with SSL termination, a private RDS database, GitHub Actions for CI/CD, and monitoring. All resources are provisioned via Terraform in the `us-east-1` region.
 
 ## Repository Structure
 
@@ -19,13 +19,27 @@ This repository contains a fully automated solution for deploying an AWS environ
 ## Pre-requisites
 
 - AWS CLI configured with necessary permissions
-- Docker Desktop (for M1 Macs, platform compatibility handled automatically)
+- Docker Desktop
 - OpenSSL (for certificate generation)
+- DockerHub account and access token
+- GitHub account with repository access
 
 ## Setup Instructions
 
 ### 1. Initial Setup
+
+Generate a self-signed certificate and add it to GitHub secrets:
 ```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout private.key \
+  -out certificate.crt \
+  -subj "/CN=app.labinternal.example.com"
+
+# Convert to base64 and add to GitHub secrets as GH_CERT_BODY and GH_CERT_KEY
+cat certificate.crt | base64
+cat private.key | base64
+```
+
 # Generate database password
 source scripts/generate_password.sh
 
@@ -40,7 +54,6 @@ alias tf='docker run --rm -it \
   -e AWS_PROFILE=lab-admin \
   -e TF_VAR_db_password=NbIhT9lMDJhyfYyLVw7Wfw== \
   muzaparoff/terraform-runner:latest'
-```
 
 ### 2. Set Up GitHub Repository
 
@@ -59,6 +72,11 @@ AWS_SECRET_KEY=$(tf output -raw github_actions_secret)
 - AWS_SECRET_ACCESS_KEY
 - ECR_FRONTEND_URL
 - ECR_BACKEND_URL
+- DB_PASSWORD
+- GH_CERT_BODY
+- GH_CERT_KEY
+- DOCKERHUB_USERNAME
+- DOCKERHUB_TOKEN
 ```
 
 3. Push code to GitHub:
@@ -70,19 +88,17 @@ git push -u origin main
 ### 3. Provision Infrastructure
 ```bash
 cd terraform
-tf init
-tf plan
-tf apply
+terraform init
+terraform plan
+terraform apply
 ```
 
 This creates:
 * VPC with private subnets and NAT Gateway
-* EKS v1.30 cluster using Fargate profiles
+* EKS v1.30 cluster with managed node groups
 * RDS PostgreSQL in private subnets
-* Self-signed certificate in ACM (generated automatically)
-* Route53 private hosted zone (labinternal.example.com)
-* GitHub repository and GitHub Actions
-* Windows instance for internal access
+* Route53 private hosted zone
+* Self-signed certificate in ACM
 * ArgoCD for GitOps deployments
 * AWS Load Balancer Controller
 * Prometheus/Grafana monitoring stack
@@ -116,10 +132,16 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 
 ### 7. CI/CD Pipeline
 
-The pipeline uses GitHub Actions with semantic versioning:
-- Commit messages starting with `ver:` - Bump major version
-- Commit messages starting with `feat:` - Bump minor version
-- Commit messages starting with `fix:` - Bump patch version
+The pipeline uses GitHub Actions with:
+- Automatic versioning based on changes
+- DockerHub image publishing
+- ArgoCD deployment
+- Infrastructure management
+
+Container Images:
+- Frontend: muzaparoff/lab-eks-cluster-frontend
+- Backend: muzaparoff/lab-eks-cluster-backend
+- Terraform: muzaparoff/terraform-runner
 
 Example commit messages:
 ```bash

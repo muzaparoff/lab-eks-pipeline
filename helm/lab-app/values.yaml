@@ -1,17 +1,17 @@
 # Default values for my-app chart
+imageTag: latest  # Default tag, will be overridden by CI/CD
+
 frontend:
   image:
-    repository: "<aws_account_id>.dkr.ecr.<region>.amazonaws.com/my-app-frontend"
-    tag: "v1.0.3"
+    repository: muzaparoff/lab-eks-cluster-frontend
+    # tag will be set by ArgoCD from versions.json
   replicas: 2
-  env:
-    APP_VERSION: "v1.0.3"
+
 backend:
   image:
-    repository: "<aws_account_id>.dkr.ecr.<region>.amazonaws.com/my-app-backend"
-    tag: "v1.0.3"
+    repository: muzaparoff/lab-eks-cluster-backend
+    # tag will be set by ArgoCD from versions.json
   replicas: 2
-  env:
-    APP_VERSION: "v1.0.3"
+
 service:
   internalDomain: "app.internal.example.com"

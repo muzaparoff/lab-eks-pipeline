@@ -57,12 +57,13 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}  # Use PAT token instead of GITHUB_TOKEN
 
       - name: Configure Git
         run: |
-          git config --global user.name "github-actions[bot]"
+          git config --global user.name "GitHub Actions Bot"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: Determine Versions
         id: semver
@@ -102,7 +103,6 @@ jobs:
             git add versions.json
             git commit -m "chore: update versions [skip ci]"
             git push
-          fi
 
   build-terraform-runner:
     needs: version
@@ -165,15 +165,3 @@ jobs:
           tags: |
             muzaparoff/lab-eks-cluster-backend:${{ needs.version.outputs.app_version }}
             muzaparoff/lab-eks-cluster-backend:latest
-
-      - name: Update Helm values
-        if: success()
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          VERSION=${{ needs.version.outputs.app_version }}
-          sed -i "s/tag:.*/tag: ${VERSION}/" helm/lab-app/values.yaml
-          git add helm/lab-app/values.yaml
-          git commit -m "chore: update app version [skip ci]"
-          git push
