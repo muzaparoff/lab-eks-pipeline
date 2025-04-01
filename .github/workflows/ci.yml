@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}  # Use PAT token instead of GITHUB_TOKEN
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Configure Git
         run: |
@@ -97,12 +97,12 @@ jobs:
           echo "{\"app_version\":\"$APP_VERSION\",\"infra_version\":\"$INFRA_VERSION\"}" > versions.json
 
       - name: Commit Version Updates
-        if: success()
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git add versions.json
             git commit -m "chore: update versions [skip ci]"
             git push
+          fi
 
   build-terraform-runner:
     needs: version
