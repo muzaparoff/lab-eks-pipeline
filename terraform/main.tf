@@ -112,27 +112,7 @@ module "windows_instance" {
   private_subnets = module.vpc.private_subnets
 }
 
-# Add AWS Load Balancer Controller Helm release
-resource "helm_release" "aws_load_balancer_controller" {
-  name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"
-  chart      = "aws-load-balancer-controller"
-  namespace  = "kube-system"
-
-  set {
-    name  = "clusterName"
-    value = var.cluster_name
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "true"
-  }
-
-  depends_on = [module.eks]
-}
-
-# Add ArgoCD installation
+# Keep only ArgoCD installation here
 resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"

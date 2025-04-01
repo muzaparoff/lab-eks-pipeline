@@ -79,6 +79,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Cleanup Resources
+        run: |
+          # Attempt to delete ALB controller without failing
+          echo "Cleaning up ALB controller..."
+          kubectl delete deployment -n kube-system aws-load-balancer-controller --ignore-not-found=true || true
+          
+          # Attempt to delete ACM certificate without failing
+          echo "Cleaning up ACM certificate..."
+          CERT_ARN=$(aws acm list-certificates --query 'CertificateSummaryList[?DomainName==`app.labinternal.example.com`].CertificateArn' --output text || true)
+          if [ ! -z "$CERT_ARN" ]; then
+            aws acm delete-certificate --certificate-arn $CERT_ARN || true
+          fi
+          
+          echo "Cleanup completed"
+
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
