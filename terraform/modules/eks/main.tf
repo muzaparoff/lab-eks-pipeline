@@ -400,14 +400,30 @@ resource "helm_release" "aws_load_balancer_controller" {
   ]
 }
 
-// Install ArgoCD with proper CRDs
+// Add cleanup for existing ArgoCD installation
+resource "null_resource" "cleanup_argocd" {
+  triggers = {
+    cluster_endpoint = aws_eks_cluster.this.endpoint
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Cleaning up existing ArgoCD installation..."
+      kubectl delete namespace argocd --ignore-not-found=true
+      # Wait for namespace to be fully deleted
+      kubectl wait --for=delete namespace/argocd --timeout=300s || true
+    EOT
+  }
+}
+
+// ArgoCD Installation with cleanup dependency
 resource "helm_release" "argocd" {
-  name             = "argocd-${random_id.suffix.hex}"  # Add unique suffix
+  name             = "argocd-${random_id.suffix.hex}"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
-  version          = "5.46.7"  # Specify version for stability
+  version          = "5.46.7"
 
   values = [
     <<-EOT
@@ -426,7 +442,6 @@ resource "helm_release" "argocd" {
     EOT
   ]
 
-  # Ensure CRDs are installed first
   set {
     name  = "crds.install"
     value = "true"
@@ -434,7 +449,8 @@ resource "helm_release" "argocd" {
 
   depends_on = [
     aws_eks_cluster.this,
-    kubernetes_config_map_v1_data.aws_auth
+    kubernetes_config_map_v1_data.aws_auth,
+    null_resource.cleanup_argocd
   ]
 
   lifecycle {
