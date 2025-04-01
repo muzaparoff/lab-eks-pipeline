@@ -471,3 +471,85 @@ resource "helm_release" "argocd" {
     create_before_destroy = true
   }
 }
+
+resource "null_resource" "cleanup_argocd" {
+  triggers = {
+    cluster_endpoint = aws_eks_cluster.this.endpoint
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Cleaning up existing ArgoCD resources..."
+      # Remove finalizers first to ensure clean deletion
+      kubectl patch application -n argocd --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' -A || true
+      
+      # Delete resources in correct order
+      kubectl delete application -n argocd --all --timeout=60s || true
+      kubectl delete appproject -n argocd --all --timeout=60s || true
+      kubectl delete -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --timeout=60s || true
+      kubectl delete namespace argocd --timeout=60s || true
+      
+      # Wait for namespace deletion
+      for i in {1..30}; do
+        if ! kubectl get namespace argocd >/dev/null 2>&1; then
+          break
+        fi
+        echo "Waiting for argocd namespace deletion... attempt $i"
+        sleep 10
+      done
+    EOT
+  }
+
+  depends_on = [aws_eks_cluster.this]
+}
+
+resource "helm_release" "argocd" {
+  name             = "argocd-${random_id.suffix.hex}"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  namespace        = "argocd"
+  create_namespace = true
+  version          = "5.46.7"
+  
+  force_update     = true
+  cleanup_on_fail  = true
+  atomic          = true
+  timeout         = 900
+
+  values = [
+    <<-EOT
+    server:
+      extraArgs:
+        - --insecure
+      service:
+        annotations: {}
+    configs:
+      secret:
+        createSecret: true
+    dex:
+      enabled: false
+    notifications:
+      enabled: false
+    applicationSet:
+      enabled: true
+    global:
+      deploymentAnnotations:
+        meta.helm.sh/release-name: "argocd-${random_id.suffix.hex}"
+    EOT
+  ]
+
+  set {
+    name  = "crds.install"
+    value = "true"
+  }
+
+  depends_on = [
+    aws_eks_cluster.this,
+    kubernetes_config_map_v1_data.aws_auth,
+    null_resource.cleanup_argocd
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
