@@ -69,6 +69,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}  # Use PAT instead of default token
 
       - name: Determine Versions
         id: semver
@@ -82,37 +83,29 @@ jobs:
             FILE_APP_VERSION=$(jq -r .app_version versions.json)
             FILE_INFRA_VERSION=$(jq -r .infra_version versions.json)
             
-            # Use file versions if they're valid semver and greater than defaults
-            if [[ "$FILE_APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$(printf '%s\n' "$APP_VERSION" "$FILE_APP_VERSION" | sort -V | tail -n1)" = "$FILE_APP_VERSION" ]]; then
-              APP_VERSION=$FILE_APP_VERSION
-            fi
-            if [[ "$FILE_INFRA_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$(printf '%s\n' "$INFRA_VERSION" "$FILE_INFRA_VERSION" | sort -V | tail -n1)" = "$FILE_INFRA_VERSION" ]]; then
-              INFRA_VERSION=$FILE_INFRA_VERSION
-            fi
+            # Use file versions if valid
+            [[ "$FILE_APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && APP_VERSION=$FILE_APP_VERSION
+            [[ "$FILE_INFRA_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && INFRA_VERSION=$FILE_INFRA_VERSION
           fi
           
-          # Detect changes
+          # Update versions based on changes
           APP_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(app/|helm/)" || true)
           INFRA_CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E "^(terraform/|docker/)" || true)
           
-          if [[ ! -z "$APP_CHANGES" ]]; then
-            APP_VERSION=$(echo $APP_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
-          fi
+          [[ ! -z "$APP_CHANGES" ]] && APP_VERSION=$(echo $APP_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
+          [[ ! -z "$INFRA_CHANGES" ]] && INFRA_VERSION=$(echo $INFRA_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
           
-          if [[ ! -z "$INFRA_CHANGES" ]]; then
-            INFRA_VERSION=$(echo $INFRA_VERSION | awk -F. '{$NF+=1; print $0}' OFS=.)
-          fi
-          
+          # Output versions
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
           echo "infra_version=$INFRA_VERSION" >> $GITHUB_OUTPUT
           
-          # Always update versions file
+          # Update versions file
           echo "{\"app_version\":\"$APP_VERSION\",\"infra_version\":\"$INFRA_VERSION\"}" > versions.json
           
-          # Only commit if there are changes
+          # Commit changes if needed
           if ! git diff --quiet versions.json; then
-            git config --global user.name "GitHub Actions"
-            git config --global user.email "actions@github.com"
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git add versions.json
             git commit -m "chore: update versions [skip ci]"
             git push
