@@ -7,9 +7,9 @@ if [ ! -f "certificates/certificate.crt" ] || [ ! -f "certificates/private.key" 
     exit 1
 fi
 
-# Extract content between markers and base64 encode
-CERT_BODY=$(awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' certificates/certificate.crt | grep -v "BEGIN\|END\|---" | tr -d '\n' | base64)
-CERT_KEY=$(awk '/BEGIN PRIVATE KEY/,/END PRIVATE KEY/' certificates/private.key | grep -v "BEGIN\|END\|---" | tr -d '\n' | base64)
+# Base64 encode the entire files without modifying content
+CERT_BODY=$(cat certificates/certificate.crt | base64 -w 0)
+CERT_KEY=$(cat certificates/private.key | base64 -w 0)
 
 echo "Add these values to GitHub secrets:"
 echo -e "\nGH_CERT_BODY:"
