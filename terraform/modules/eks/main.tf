@@ -399,3 +399,41 @@ resource "helm_release" "aws_load_balancer_controller" {
     kubernetes_config_map_v1_data.aws_auth
   ]
 }
+
+// Install ArgoCD with proper CRDs
+resource "helm_release" "argocd" {
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  namespace        = "argocd"
+  create_namespace = true
+  version          = "5.46.7"  # Specify version for stability
+
+  values = [
+    <<-EOT
+    server:
+      extraArgs:
+        - --insecure
+    configs:
+      secret:
+        createSecret: true
+    dex:
+      enabled: false
+    notifications:
+      enabled: false
+    applicationSet:
+      enabled: true
+    EOT
+  ]
+
+  # Ensure CRDs are installed first
+  set {
+    name  = "crds.install"
+    value = "true"
+  }
+
+  depends_on = [
+    aws_eks_cluster.this,
+    kubernetes_config_map_v1_data.aws_auth
+  ]
+}
