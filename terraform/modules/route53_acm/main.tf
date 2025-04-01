@@ -107,6 +107,7 @@ locals {
   certificate_arn = data.aws_acm_certificate.existing.arn != null ? data.aws_acm_certificate.existing.arn : aws_acm_certificate.cert[0].arn
 }
 
-output "certificate_arn" {
-  value = local.certificate_arn
-}
+# Remove this output since it's defined in outputs.tf
+# output "certificate_arn" {
+#   value = local.certificate_arn
+# }
