@@ -11,9 +11,10 @@ resource "aws_route53_zone" "internal" {
   }
 }
 
+# Use imported certificate
 resource "aws_acm_certificate" "cert" {
   certificate_body  = base64decode(var.certificate_body)
-  private_key      = base64decode(var.private_key)
+  private_key      = base64decode(var.certificate_key)
   
   tags = {
     Name = var.cert_domain
@@ -21,19 +22,6 @@ resource "aws_acm_certificate" "cert" {
 
   lifecycle {
     create_before_destroy = true
-  }
-}
-
-# Look for existing certificate with error handling
-data "aws_acm_certificate" "existing" {
-  domain   = var.cert_domain
-  statuses = ["ISSUED"]
-
-  lifecycle {
-    postcondition {
-      condition     = self.arn != null
-      error_message = "No valid certificate found for domain ${var.cert_domain}"
-    }
   }
 }
 
