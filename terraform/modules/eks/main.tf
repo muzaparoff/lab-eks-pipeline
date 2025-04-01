@@ -56,8 +56,12 @@ resource "aws_security_group" "eks_cluster" {
   }
 }
 
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
 resource "aws_security_group" "node_group" {
-  name        = "${var.cluster_name}-node-group-sg"
+  name        = "${var.cluster_name}-node-group-sg-${random_id.suffix.hex}"
   description = "Security group for EKS node group"
   vpc_id      = var.vpc_id
 
@@ -93,7 +97,12 @@ resource "aws_security_group" "node_group" {
   }
 
   tags = {
-    Name = "${var.cluster_name}-node-group-sg"
+    Name = "${var.cluster_name}-node-group-sg-${random_id.suffix.hex}"
+    Cluster = var.cluster_name
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
