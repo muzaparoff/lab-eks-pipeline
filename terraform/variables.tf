@@ -37,7 +37,7 @@ variable "cluster_name" {
 variable "db_username" {
   description = "Username for the RDS database"
   type        = string
-  default     = "admin"
+  default     = "dbadmin"  # Changed from "admin" to avoid reserved word
 }
 
 variable "db_password" {
