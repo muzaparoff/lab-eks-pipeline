@@ -283,6 +283,39 @@ argocd app sync lab-app --force
 ./scripts/cleanup_resources.sh
 ```
 
+## Manual Testing in Windows Instance
+
+1. Connect to Windows Instance:
+```bash
+# Get Windows instance ID
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=lab-eks-windows" \
+  --query 'Reservations[].Instances[?State.Name==`running`].InstanceId' \
+  --output text
+
+# Start Session Manager session
+aws ssm start-session --target <instance-id>
+```
+
+2. Open Edge Browser in Windows:
+   - Press Windows + R
+   - Type `msedge` and press Enter
+
+3. Access the Application:
+   - Navigate to: `https://app.labinternal.example.com`
+   - You should see the frontend displaying data from backend
+   - Data refreshes every 10 seconds automatically
+
+4. Verify Database Updates:
+   - Each refresh shows latest value from PostgreSQL
+   - Format: "Hello Lab-commit X" where X increments
+
+5. Troubleshooting:
+   - Check certificate warning (expected with self-signed cert)
+   - Verify DNS resolution: `nslookup app.labinternal.example.com`
+   - Test backend directly: `curl http://backend-service:5000/data`
+   - Check Route53 record: `aws route53 list-resource-record-sets --hosted-zone-id <zone-id>`
+
 ## Security Features
 
 - Private VPC configuration
@@ -298,5 +331,49 @@ argocd app sync lab-app --force
 - Grafana dashboards
 - EKS control plane logging
 - RDS performance insights
+
+## Testing via Windows Instance
+
+1. Connect to Windows Instance:
+```bash
+# Get the instance ID of your Windows instance
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=lab-eks-windows" \
+  --query 'Reservations[].Instances[?State.Name==`running`].InstanceId' \
+  --output text
+
+# Connect via Session Manager in AWS Console:
+# 1. Go to AWS Console → EC2 → Instances
+# 2. Select your Windows instance
+# 3. Click "Connect" button
+# 4. Choose "Session Manager" tab
+# 5. Click "Connect"
+```
+
+2. Test Application Access:
+- Open Edge browser in the Windows instance
+- Navigate to: `https://app.labinternal.example.com`
+- You should see:
+  * Frontend displaying "Hello Lab-commit X"
+  * Version number
+  * Auto-refresh every 10 seconds
+
+3. Verify Database Connection:
+- Watch the value increment
+- Each refresh should show latest data from RDS
+
+4. Troubleshooting:
+- If certificate warning appears, this is normal (self-signed cert)
+- If page doesn't load:
+  ```bash
+  # Test DNS resolution
+  nslookup app.labinternal.example.com
+  
+  # Test backend directly
+  curl http://backend-service:5000/data
+  
+  # Check pods status
+  kubectl get pods -n lab-app
+  ```
 
 
