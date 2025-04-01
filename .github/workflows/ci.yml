@@ -106,10 +106,14 @@ jobs:
 
   build-terraform-runner:
     needs: version
-    if: contains(github.event.head_commit.modified, 'docker/Terraform.dockerfile')
+    permissions:
+      packages: write  # Add permission for Docker push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -118,23 +122,25 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Terraform runner
-        env:
-          RUNNER_TAG: ${{ needs.version.outputs.infra_version }}
-          DOCKER_TERRAFORM: muzaparoff/terraform-runner
-        run: |
-          docker build -t $DOCKER_TERRAFORM:${RUNNER_TAG} \
-            --build-arg TERRAFORM_VERSION=${TERRAFORM_VERSION} \
-            -f docker/Terraform.dockerfile .
-          docker tag $DOCKER_TERRAFORM:${RUNNER_TAG} $DOCKER_TERRAFORM:latest
-          docker push $DOCKER_TERRAFORM:${RUNNER_TAG}
-          docker push $DOCKER_TERRAFORM:latest
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: docker/Terraform.dockerfile
+          push: true
+          tags: |
+            muzaparoff/terraform-runner:${{ needs.version.outputs.infra_version }}
+            muzaparoff/terraform-runner:latest
 
   build-app:
     needs: [version]
-    if: contains(github.event.head_commit.modified, 'app/') || contains(github.event.head_commit.modified, 'helm/')
+    permissions:
+      packages: write  # Add permission for Docker push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -142,21 +148,26 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push images
-        env:
-          VERSION: ${{ needs.version.outputs.app_version }}
-          DOCKER_FRONTEND: muzaparoff/lab-eks-cluster-frontend
-          DOCKER_BACKEND: muzaparoff/lab-eks-cluster-backend
-        run: |
-          docker build -t $DOCKER_FRONTEND:$VERSION -t $DOCKER_FRONTEND:latest ./app/frontend
-          docker push $DOCKER_FRONTEND:$VERSION
-          docker push $DOCKER_FRONTEND:latest
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app/frontend
+          push: true
+          tags: |
+            muzaparoff/lab-eks-cluster-frontend:${{ needs.version.outputs.app_version }}
+            muzaparoff/lab-eks-cluster-frontend:latest
 
-          docker build -t $DOCKER_BACKEND:$VERSION -t $DOCKER_BACKEND:latest ./app/backend
-          docker push $DOCKER_BACKEND:$VERSION
-          docker push $DOCKER_BACKEND:latest
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app/backend
+          push: true
+          tags: |
+            muzaparoff/lab-eks-cluster-backend:${{ needs.version.outputs.app_version }}
+            muzaparoff/lab-eks-cluster-backend:latest
 
       - name: Update Helm values
+        if: success()
         run: |
           VERSION=${{ needs.version.outputs.app_version }}
           sed -i "s/tag:.*/tag: ${VERSION}/" helm/lab-app/values.yaml

@@ -68,6 +68,7 @@ jobs:
 
   get-terraform-outputs:
     runs-on: ubuntu-latest
+    needs: deploy-infrastructure  # Make sure infrastructure exists first
     outputs:
       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
     steps:
@@ -85,12 +86,30 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
-      - name: Get Terraform Outputs
+      - name: Initialize and get outputs
         id: tf-outputs
         working-directory: terraform
         run: |
-          terraform init
-          echo "cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
+          # Initialize terraform with -reconfigure flag
+          terraform init -reconfigure
+
+          # Wait for potential locks to be released
+          for i in {1..5}; do
+            if terraform state pull > /dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for state lock... attempt $i"
+            sleep 10
+          done
+
+          # Get output with error handling
+          CLUSTER_NAME=$(terraform output -json eks_cluster_name 2>/dev/null | jq -r '.')
+          if [ "$?" -eq 0 ] && [ ! -z "$CLUSTER_NAME" ]; then
+            echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Failed to get cluster name from terraform output"
+            exit 1
+          fi
 
   deploy-application:
     needs: [deploy-infrastructure, get-terraform-outputs]
