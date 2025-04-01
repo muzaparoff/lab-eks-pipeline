@@ -402,7 +402,7 @@ resource "helm_release" "aws_load_balancer_controller" {
 
 // Install ArgoCD with proper CRDs
 resource "helm_release" "argocd" {
-  name             = "argocd"
+  name             = "argocd-${random_id.suffix.hex}"  # Add unique suffix
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   namespace        = "argocd"
@@ -436,4 +436,8 @@ resource "helm_release" "argocd" {
     aws_eks_cluster.this,
     kubernetes_config_map_v1_data.aws_auth
   ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }

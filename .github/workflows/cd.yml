@@ -146,33 +146,6 @@ jobs:
             muzaparoff/terraform-runner:latest \
             ${{ github.event.inputs.action == 'destroy' && 'destroy -auto-approve' || 'apply -auto-approve' }}
 
-      - name: Configure ArgoCD
-        if: github.event.inputs.action != 'destroy'
-        run: |
-          echo "Installing ArgoCD CRDs and components..."
-          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Apply CRDs
-          kubectl apply -f k8s/argocd/crds.yaml
-          
-          # Install ArgoCD
-          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-          
-          # Wait for ArgoCD to be ready
-          echo "Waiting for ArgoCD to be ready..."
-          kubectl wait --namespace argocd \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/name=argocd-server \
-            --timeout=300s
-          
-          # Create project
-          kubectl apply -f k8s/argocd/app-project.yaml
-          
-          # Deploy application
-          kubectl apply -f k8s/argocd-app.yaml
-
-          echo "ArgoCD setup completed"
-
   get-terraform-outputs:
     runs-on: ubuntu-latest
     needs: deploy-infrastructure
@@ -236,27 +209,3 @@ jobs:
             echo "Error: Failed to get cluster name from terraform output"
             exit 1
           fi
-
-  deploy-application:
-    needs: [deploy-infrastructure, get-terraform-outputs]
-    if: ${{ github.event.inputs.action != 'destroy' }}
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Git Setup
-        run: |
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git
