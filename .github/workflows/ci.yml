@@ -47,6 +47,9 @@ jobs:
 
   version:
     needs: get-terraform-outputs
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     outputs:
       app_version: ${{ steps.semver.outputs.app_version }}
@@ -55,11 +58,15 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}  # Use PAT instead of default token
+          token: ${{ secrets.GH_PAT }}
+          persist-credentials: true
 
       - name: Determine Versions
         id: semver
         run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
           # Initialize versions with defaults
           APP_VERSION="0.0.1"
           INFRA_VERSION="0.0.1"
@@ -90,12 +97,13 @@ jobs:
           
           # Commit changes if needed
           if ! git diff --quiet versions.json; then
-            git config --global user.name "GitHub Actions Bot"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}
             git add versions.json
             git commit -m "chore: update versions [skip ci]"
             git push
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
   build-terraform-runner:
     needs: version
