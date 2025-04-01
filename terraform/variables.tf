@@ -111,3 +111,9 @@ variable "certificate_key" {
   type        = string
   sensitive   = true
 }
+
+variable "github_repository" {
+  description = "GitHub repository name in format 'owner/repo'"
+  type        = string
+  default     = "muzaparoff/lab-eks-pipeline"
+}
