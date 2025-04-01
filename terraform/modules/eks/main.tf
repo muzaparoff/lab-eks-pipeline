@@ -220,7 +220,7 @@ resource "null_resource" "wait_for_cluster" {
 data "aws_region" "current" {}
 
 // Update aws-auth ConfigMap
-resource "kubernetes_config_map" "aws_auth" {
+resource "kubernetes_config_map_v1_data" "aws_auth" {
   metadata {
     name      = "aws-auth"
     namespace = "kube-system"
@@ -248,6 +248,8 @@ resource "kubernetes_config_map" "aws_auth" {
     ])
   }
 
+  force = true
+
   depends_on = [aws_eks_cluster.this, null_resource.wait_for_cluster]
 }
 
@@ -271,7 +273,7 @@ resource "kubernetes_cluster_role_binding" "admin" {
     api_group = "rbac.authorization.k8s.io"
   }
 
-  depends_on = [kubernetes_config_map.aws_auth]
+  depends_on = [kubernetes_config_map_v1_data.aws_auth]
 }
 
 // Add cluster admin binding
@@ -292,7 +294,7 @@ resource "kubernetes_cluster_role_binding" "cluster_admin" {
     api_group = "rbac.authorization.k8s.io"
   }
 
-  depends_on = [kubernetes_config_map.aws_auth]
+  depends_on = [kubernetes_config_map_v1_data.aws_auth]
 }
 
 // Install ALB controller with increased timeout and better error handling
@@ -323,6 +325,6 @@ resource "helm_release" "aws_load_balancer_controller" {
   depends_on = [
     aws_eks_cluster.this,
     aws_eks_node_group.this,
-    kubernetes_config_map.aws_auth
+    kubernetes_config_map_v1_data.aws_auth
   ]
 }
