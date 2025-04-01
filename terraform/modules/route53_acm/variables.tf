@@ -13,13 +13,8 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "alb_dns_name" {
-  description = "ALB DNS name for Route53 alias"
-  type        = string
-}
-
-variable "alb_zone_id" {
-  description = "ALB zone ID for Route53 alias"
+variable "cluster_endpoint" {
+  description = "EKS cluster endpoint"
   type        = string
 }
 

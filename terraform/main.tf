@@ -96,8 +96,7 @@ module "route53_acm" {
   domain_name = var.domain_name
   cert_domain = var.cert_domain
   vpc_id = module.vpc.vpc_id
-  alb_dns_name = module.eks.alb_dns_name
-  alb_zone_id = module.eks.alb_zone_id
+  cluster_endpoint = module.eks.cluster_endpoint
 
   depends_on = [module.vpc, module.eks]
 }

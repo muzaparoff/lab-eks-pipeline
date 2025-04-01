@@ -11,6 +11,12 @@ resource "aws_route53_zone" "internal" {
   }
 }
 
+# Look for existing certificate
+data "aws_acm_certificate" "existing" {
+  domain   = var.cert_domain
+  statuses = ["ISSUED", "PENDING_VALIDATION"]
+}
+
 # Store certificate content in SSM Parameter Store
 resource "aws_ssm_parameter" "certificate" {
   name  = "/${var.cert_domain}/certificate"
@@ -47,6 +53,8 @@ resource "null_resource" "cert_dir" {
 
 # Generate certificate only if it doesn't exist
 resource "null_resource" "generate_certificate" {
+  count = data.aws_acm_certificate.existing.arn == null ? 1 : 0
+
   triggers = {
     cert_file_exists = fileexists("${path.module}/certificates/certificate.crt") ? "exists" : timestamp()
   }
@@ -64,8 +72,10 @@ resource "null_resource" "generate_certificate" {
   }
 }
 
-# Import certificate into ACM
+# Import certificate into ACM only if it doesn't exist
 resource "aws_acm_certificate" "cert" {
+  count = data.aws_acm_certificate.existing.arn == null ? 1 : 0
+
   certificate_body  = local.certificate_content
   private_key      = local.private_key_content
   
@@ -84,5 +94,19 @@ resource "aws_route53_record" "app" {
   name    = var.cert_domain
   type    = "CNAME"
   ttl     = "300"
-  records = [var.cluster_endpoint]
+  records = [trimprefix(var.cluster_endpoint, "https://")]
+
+  depends_on = [
+    aws_acm_certificate.cert,
+    data.aws_acm_certificate.existing
+  ]
+}
+
+# Update outputs to use either existing or new certificate
+locals {
+  certificate_arn = data.aws_acm_certificate.existing.arn != null ? data.aws_acm_certificate.existing.arn : aws_acm_certificate.cert[0].arn
+}
+
+output "certificate_arn" {
+  value = local.certificate_arn
 }

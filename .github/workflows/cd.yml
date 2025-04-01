@@ -93,9 +93,18 @@ jobs:
   deploy-application:
     needs: [deploy-infrastructure, get-terraform-outputs]
     if: ${{ github.event.inputs.action != 'destroy' }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Git Setup
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Load versions
         id: versions
