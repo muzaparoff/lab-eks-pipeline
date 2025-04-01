@@ -11,10 +11,18 @@ resource "aws_route53_zone" "internal" {
   }
 }
 
-# Use imported certificate
+# Use imported certificate with validation
 resource "aws_acm_certificate" "cert" {
-  certificate_body  = base64decode(var.certificate_body)
-  private_key      = base64decode(var.certificate_key)
+  # Use local-exec to validate base64 strings before using them
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "${var.certificate_body}" | base64 -d > /dev/null || exit 1
+      echo "${var.certificate_key}" | base64 -d > /dev/null || exit 1
+    EOT
+  }
+
+  certificate_body = sensitive(trimspace(var.certificate_body))
+  private_key     = sensitive(trimspace(var.certificate_key))
   
   tags = {
     Name = var.cert_domain
@@ -22,6 +30,11 @@ resource "aws_acm_certificate" "cert" {
 
   lifecycle {
     create_before_destroy = true
+    # Add precondition to validate variables are not empty
+    precondition {
+      condition     = var.certificate_body != "" && var.certificate_key != ""
+      error_message = "Certificate body and private key must not be empty"
+    }
   }
 }
 

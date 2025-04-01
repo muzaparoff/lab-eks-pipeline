@@ -52,7 +52,9 @@ alias tf='docker run --rm -it \
   -v $(pwd):/workspace \
   -w /workspace \
   -e AWS_PROFILE=lab-admin \
-  -e TF_VAR_db_password=NbIhT9lMDJhyfYyLVw7Wfw== \
+  -e TF_VAR_db_password=$TF_VAR_db_password \
+  -e TF_VAR_certificate_body=$(cat ../certificates/certificate.crt | base64) \
+  -e TF_VAR_certificate_key=$(cat ../certificates/private.key | base64) \
   muzaparoff/terraform-runner:latest'
 
 ### 2. Set Up GitHub Repository
