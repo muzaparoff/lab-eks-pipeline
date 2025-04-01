@@ -97,7 +97,7 @@ resource "aws_security_group" "node_group" {
   }
 
   tags = {
-    Name = "${var.cluster_name}-node-group-sg-${random_id.suffix.hex}"
+    Name    = "${var.cluster_name}-node-group-sg-${random_id.suffix.hex}"
     Cluster = var.cluster_name
   }
 
@@ -114,7 +114,7 @@ resource "aws_eks_cluster" "this" {
     subnet_ids              = var.private_subnets
     endpoint_private_access = true
     endpoint_public_access  = true  # Temporarily enable for initial setup
-    security_group_ids     = [aws_security_group.eks_cluster.id]
+    security_group_ids      = [aws_security_group.eks_cluster.id]
   }
 
   version = var.cluster_version
@@ -151,7 +151,7 @@ resource "aws_iam_role" "node_group" {
 resource "aws_iam_role_policy_attachment" "node_group_policies" {
   for_each = {
     AmazonEKSWorkerNodePolicy          = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-    AmazonEKS_CNI_Policy              = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+    AmazonEKS_CNI_Policy               = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
     AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   }
 
@@ -185,9 +185,9 @@ resource "aws_eks_node_group" "this" {
 
 resource "aws_launch_template" "eks_nodes" {
   name_prefix = "${var.cluster_name}-node-"
-  
+
   vpc_security_group_ids = [aws_security_group.node_group.id]
-  
+
   // ...rest of launch template config...
 }
 
@@ -404,82 +404,93 @@ resource "helm_release" "aws_load_balancer_controller" {
 resource "null_resource" "cleanup_argocd" {
   triggers = {
     cluster_endpoint = aws_eks_cluster.this.endpoint
+    release_name     = "argocd-${random_id.suffix.hex}"
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Cleaning up existing ArgoCD resources..."
-      # Remove finalizers first to ensure clean deletion
-      kubectl patch application -n argocd --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' -A || true
+      # Remove resources with proper cleanup
+      echo "Cleaning up ArgoCD resources..."
       
-      # Delete resources in correct order
-      kubectl delete application -n argocd --all --timeout=60s || true
-      kubectl delete appproject -n argocd --all --timeout=60s || true
-      kubectl delete -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --timeout=60s || true
+      # Remove finalizers from resources
+      for ns in argocd; do
+        kubectl get applications.argoproj.io -n $ns -o name | xargs -r -I {} kubectl patch {} -n $ns --type json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' || true
+        kubectl get appprojects.argoproj.io -n $ns -o name | xargs -r -I {} kubectl patch {} -n $ns --type json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' || true
+      done
+      
+      # Delete ArgoCD helm release if exists
+      helm uninstall ${self.triggers.release_name} -n argocd || true
+      
+      # Delete the namespace and wait for completion
       kubectl delete namespace argocd --timeout=60s || true
       
-      # Wait for namespace deletion
-      for i in {1..30}; do
-        if ! kubectl get namespace argocd >/dev/null 2>&1; then
-          break
-        fi
-        echo "Waiting for argocd namespace deletion... attempt $i"
-        sleep 10
+      echo "Waiting for namespace deletion..."
+      while kubectl get namespace argocd >/dev/null 2>&1; do
+        echo "Waiting for argocd namespace to be fully deleted..."
+        sleep 5
       done
+      
+      echo "ArgoCD cleanup completed"
     EOT
   }
 
   depends_on = [aws_eks_cluster.this]
 }
 
-// ArgoCD Installation
+// ArgoCD Installation using official Helm chart
 resource "helm_release" "argocd" {
-  name             = "argocd-${random_id.suffix.hex}"
+  name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
   version          = "5.46.7"
-  
-  force_update     = true
-  cleanup_on_fail  = true
-  atomic          = true
-  timeout         = 900
+
+  set {
+    name  = "global.image.tag"
+    value = "v2.9.3"  # Specify ArgoCD version
+  }
+
+  set {
+    name  = "server.extraArgs"
+    value = "{--insecure}"
+  }
+
+  set {
+    name  = "controller.args.appResyncPeriod"
+    value = "30"
+  }
+
+  set {
+    name  = "server.service.type"
+    value = "ClusterIP"
+  }
 
   values = [
     <<-EOT
-    server:
-      extraArgs:
-        - --insecure
-      service:
-        annotations: {}
+    global:
+      image:
+        repository: quay.io/argoproj/argocd
     configs:
       secret:
         createSecret: true
+      params:
+        server.insecure: true
+    server:
+      config:
+        url: https://argocd.${var.cluster_name}
+        application.instanceLabelKey: argocd.argoproj.io/instance
     dex:
       enabled: false
     notifications:
       enabled: false
     applicationSet:
       enabled: true
-    global:
-      deploymentAnnotations:
-        meta.helm.sh/release-name: "argocd-${random_id.suffix.hex}"
     EOT
   ]
 
-  set {
-    name  = "crds.install"
-    value = "true"
-  }
-
   depends_on = [
     aws_eks_cluster.this,
-    kubernetes_config_map_v1_data.aws_auth,
-    null_resource.cleanup_argocd
+    kubernetes_config_map_v1_data.aws_auth
   ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
